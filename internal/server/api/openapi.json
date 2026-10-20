@@ -1,0 +1,478 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "LCARS API",
+    "version": "{{VERSION}}",
+    "summary": "LCARS for home: a lightweight HTTP API for LCARS.",
+    "description": "LCARS API is a small HTTP server built on Go's standard library. This reference is generated from the OpenAPI document the server itself serves at [`/openapi.json`](/openapi.json), and the version shown above is the version of the running build.\n\n## Conventions\n\n- **Encoding.** Request and response bodies are JSON (`Content-Type: application/json`) unless an operation says otherwise.\n- **`HEAD`.** Every `GET` operation also answers `HEAD`, with the same status and headers and no body.\n- **Authentication.** None. The API is meant to run on a trusted home network; put it behind a reverse proxy if you need authentication or TLS.\n- **Dates and times.** Dates are `YYYY-MM-DD`. Timestamps are [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) with the UTC offset of the server's timezone, e.g. `2026-10-20T09:00:00-04:00`.\n- **Versioning.** Paths are not versioned yet. The build version is reported by [`GET /healthz`](#operation/getHealth).\n\n## Errors\n\nErrors raised by an operation have a JSON body with a single `error` field:\n\n```json\n{\"error\": \"Internal Server Error\"}\n```\n\nUnexpected failures, including panics, are logged on the server and returned as a `500` with a generic message, so internal details never reach the client.\n\nRouting errors come from the router before any operation runs, and have a **plain-text** body:\n\n| Status | When | Body |\n|--------|------|------|\n| `404` | No route matches the path. | `404 page not found` |\n| `405` | The path exists, but not for this method. The `Allow` header lists the methods that are, e.g. `Allow: GET, HEAD`. | `Method Not Allowed` |\n\n## Timeouts\n\nThe server closes connections that are slow to send headers (5 s) or a request (15 s), and responses that take longer than 15 s to write. Idle keep-alive connections are closed after 60 s. On `SIGTERM` or `SIGINT` it stops accepting new connections and waits for in-flight requests to finish before exiting.",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "The server hosting this document"
+    }
+  ],
+  "security": [],
+  "tags": [
+    {
+      "name": "System",
+      "description": "Process health and build information."
+    },
+    {
+      "name": "Calendar",
+      "description": "Events read from `.ics` files on the host.\n\nThe server reads every `.ics` file under the directory set by `calendar.dir` in the config file (or `LCARS_CALENDAR_DIR`), including subdirectories, and re-reads it every `calendar.refresh_interval` (default one hour). Recurring events are expanded, including exceptions (`EXDATE`) and edited or cancelled occurrences (`RECURRENCE-ID`). A file that can't be parsed is skipped and logged on the server; the rest are still served.\n\nEach event belongs to a calendar, named by the file's `X-WR-CALNAME` if set, otherwise by the top-level subdirectory the file is in, otherwise by the file name without `.ics`. So both `calendars/family.ics` and `calendars/family/*.ics` give a calendar named `family`."
+    },
+    {
+      "name": "Documentation",
+      "description": "This API reference and the OpenAPI document it is built from."
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "getHealth",
+        "tags": [
+          "System"
+        ],
+        "summary": "Check liveness",
+        "description": "Reports that the process is up and serving requests, along with the build version. Use it for container liveness probes and uptime checks. It does no other work, so it is cheap to call often.",
+        "responses": {
+          "200": {
+            "description": "The server is up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                },
+                "example": {
+                  "status": "ok",
+                  "version": "v1.2.0"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/calendar": {
+      "get": {
+        "operationId": "getCalendar",
+        "tags": [
+          "Calendar"
+        ],
+        "summary": "List events by day",
+        "description": "Returns the events in a range of days, grouped by day, ready to draw as an agenda or week view. Every day in the range is present, in order, even if it has no events.\n\nDates and times are in the server's timezone (`timezone` in the config file, or the host's), which the response reports. An event that spans several days appears on each of them. Within a day, all-day events come first, then timed events by start time.\n\nEvents are read from disk periodically, not on each request; `updated_at` says when they were last read.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "First day to list, as `YYYY-MM-DD`. Defaults to today in the server's timezone.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "example": "2026-10-20"
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Number of days to list, starting with `from`.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 62,
+              "default": 7
+            },
+            "example": 7
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events grouped by day.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Calendar"
+                },
+                "example": {
+                  "timezone": "America/New_York",
+                  "from": "2026-10-20",
+                  "to": "2026-10-21",
+                  "updated_at": "2026-10-20T08:00:00-04:00",
+                  "days": [
+                    {
+                      "date": "2026-10-20",
+                      "weekday": "Tuesday",
+                      "today": true,
+                      "events": [
+                        {
+                          "id": "b9c1e0de-2b47-4c2e-9d1e-3a7f0c6b5a11/20261020T000000Z",
+                          "title": "Recycling day",
+                          "calendar": "home",
+                          "location": "",
+                          "all_day": true,
+                          "start": "2026-10-20T00:00:00-04:00",
+                          "end": "2026-10-21T00:00:00-04:00",
+                          "start_time": null,
+                          "end_time": null
+                        },
+                        {
+                          "id": "4f0d7c1a-8e2b-4b6a-a0c3-5d9e2f7b1c44/20261020T130000Z",
+                          "title": "Team standup",
+                          "calendar": "work",
+                          "location": "Video call",
+                          "all_day": false,
+                          "start": "2026-10-20T09:00:00-04:00",
+                          "end": "2026-10-20T09:15:00-04:00",
+                          "start_time": "09:00",
+                          "end_time": "09:15"
+                        },
+                        {
+                          "id": "e2a8b6f3-1c9d-4e7a-b5f0-6c3d8a9e2b77/20261020T230000Z",
+                          "title": "Overnight flight",
+                          "calendar": "travel",
+                          "location": "",
+                          "all_day": false,
+                          "start": "2026-10-20T19:00:00-04:00",
+                          "end": "2026-10-21T07:30:00-04:00",
+                          "start_time": "19:00",
+                          "end_time": null
+                        }
+                      ]
+                    },
+                    {
+                      "date": "2026-10-21",
+                      "weekday": "Wednesday",
+                      "today": false,
+                      "events": [
+                        {
+                          "id": "e2a8b6f3-1c9d-4e7a-b5f0-6c3d8a9e2b77/20261020T230000Z",
+                          "title": "Overnight flight",
+                          "calendar": "travel",
+                          "location": "",
+                          "all_day": false,
+                          "start": "2026-10-20T19:00:00-04:00",
+                          "end": "2026-10-21T07:30:00-04:00",
+                          "start_time": null,
+                          "end_time": "07:30"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A query parameter is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "invalid \"days\": want a whole number from 1 to 62"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "description": "No calendar directory is configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "calendar is not configured: set calendar.dir in the config file"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "getOpenAPI",
+        "tags": [
+          "Documentation"
+        ],
+        "summary": "Get the OpenAPI document",
+        "description": "Returns this OpenAPI 3.1 document, with `info.version` set to the version of the running build. Import it into an API client, or generate a typed client from it.",
+        "responses": {
+          "200": {
+            "description": "The OpenAPI document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "An [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0) document.",
+                  "required": [
+                    "openapi",
+                    "info",
+                    "paths"
+                  ],
+                  "properties": {
+                    "openapi": {
+                      "type": "string",
+                      "examples": [
+                        "3.1.0"
+                      ]
+                    },
+                    "info": {
+                      "type": "object"
+                    },
+                    "paths": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "operationId": "getDocs",
+        "tags": [
+          "Documentation"
+        ],
+        "summary": "View the API reference",
+        "description": "Returns the HTML page you are reading: a [Redoc](https://github.com/Redocly/redoc) rendering of [`/openapi.json`](#operation/getOpenAPI). The page loads Redoc from a CDN, pinned to one version and checked with Subresource Integrity, so the browser viewing it needs internet access.",
+        "responses": {
+          "200": {
+            "description": "The API reference page.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "required": [
+          "status",
+          "version"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "description": "Always `ok`. A server that is not healthy does not answer at all."
+          },
+          "version": {
+            "type": "string",
+            "description": "Build version: the release tag (or `git describe` output) the binary was built from, or `(devel)` for an unversioned local build.",
+            "examples": [
+              "v1.2.0",
+              "v1.2.0-3-g1a2b3c4-dirty",
+              "(devel)"
+            ]
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Human-readable description of what went wrong."
+          }
+        }
+      },
+      "Calendar": {
+        "type": "object",
+        "required": [
+          "timezone",
+          "from",
+          "to",
+          "updated_at",
+          "days"
+        ],
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "IANA name of the timezone all dates and times are in, or `Local` if the host's zone has no known name.",
+            "examples": [
+              "America/New_York"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "format": "date",
+            "description": "First day listed."
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day listed (inclusive)."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the `.ics` files were last read successfully."
+          },
+          "days": {
+            "type": "array",
+            "description": "One entry per day from `from` to `to`, in order.",
+            "items": {
+              "$ref": "#/components/schemas/CalendarDay"
+            }
+          }
+        }
+      },
+      "CalendarDay": {
+        "type": "object",
+        "required": [
+          "date",
+          "weekday",
+          "today",
+          "events"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "weekday": {
+            "type": "string",
+            "enum": [
+              "Sunday",
+              "Monday",
+              "Tuesday",
+              "Wednesday",
+              "Thursday",
+              "Friday",
+              "Saturday"
+            ]
+          },
+          "today": {
+            "type": "boolean",
+            "description": "Whether this day is today in the server's timezone."
+          },
+          "events": {
+            "type": "array",
+            "description": "Events overlapping this day: all-day events first, then by start time. Empty if there are none.",
+            "items": {
+              "$ref": "#/components/schemas/CalendarEvent"
+            }
+          }
+        }
+      },
+      "CalendarEvent": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "calendar",
+          "location",
+          "all_day",
+          "start",
+          "end",
+          "start_time",
+          "end_time"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Identifies this occurrence: the event's `UID`, a slash, and its start time in UTC. Each occurrence of a recurring event has its own ID, and a multi-day event has the same ID on every day."
+          },
+          "title": {
+            "type": "string",
+            "description": "The event's `SUMMARY`. Empty if it has none."
+          },
+          "calendar": {
+            "type": "string",
+            "description": "Name of the calendar the event is from. See the Calendar section above for how it is chosen."
+          },
+          "location": {
+            "type": "string",
+            "description": "The event's `LOCATION`. Empty if it has none."
+          },
+          "all_day": {
+            "type": "boolean",
+            "description": "Whether this is an all-day event. All-day events have no times: `start` and `end` are midnights, and `start_time` and `end_time` are null."
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the occurrence starts."
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the occurrence ends (exclusive). For an all-day event on one day, this is midnight at the start of the next day."
+          },
+          "start_time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+            "description": "Start time as `HH:MM` (24-hour), if a timed event starts on this day; null otherwise. Use it as the display label without parsing `start`.",
+            "examples": [
+              "09:00"
+            ]
+          },
+          "end_time": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+            "description": "End time as `HH:MM` (24-hour), if a timed event ends on this day; null otherwise. An event ending exactly at midnight shows `24:00` on the day before.",
+            "examples": [
+              "10:30",
+              "24:00"
+            ]
+          }
+        }
+      }
+    },
+    "responses": {
+      "InternalError": {
+        "description": "The server failed unexpectedly. Details are logged on the server, not returned.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Internal Server Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

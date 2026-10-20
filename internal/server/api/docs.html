@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LCARS API Reference</title>
+  <style>body { margin: 0; }</style>
+</head>
+<body>
+  <div id="redoc"></div>
+  <!-- To upgrade Redoc, change the version and recompute the integrity hash:
+       curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A -->
+  <script src="https://cdn.jsdelivr.net/npm/redoc@2.5.4/bundles/redoc.standalone.js"
+          integrity="sha384-w447zOpYfw/1Tv/5AK9NfHTlQIqE3RVR6KY62jCyy9zNDgO64cMwGGP1Fj0zJVf5"
+          crossorigin="anonymous"></script>
+  <script>
+    // Relative URL, so the page also works behind a reverse proxy subpath.
+    Redoc.init("openapi.json", {
+      expandResponses: "200",
+      requiredPropsFirst: true,
+      jsonSamplesExpandLevel: "all",
+      theme: {
+        colors: { primary: { main: "#c25e00" } },
+        typography: {
+          headings: { fontFamily: "system-ui, sans-serif" },
+          fontFamily: "system-ui, sans-serif",
+          code: { fontFamily: "ui-monospace, Menlo, monospace" }
+        },
+        sidebar: {
+          backgroundColor: "#000000",
+          textColor: "#ff9c38",
+          activeTextColor: "#ffcc99"
+        },
+        rightPanel: { backgroundColor: "#1b1b2f" }
+      }
+    }, document.getElementById("redoc"));
+  </script>
+</body>
+</html>

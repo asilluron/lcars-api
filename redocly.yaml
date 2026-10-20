@@ -1,0 +1,12 @@
+# Config for `make api-lint` (Redocly CLI).
+extends:
+  - recommended
+
+apis:
+  lcars:
+    root: internal/server/api/openapi.json
+
+rules:
+  # Most operations are GETs with no parameters, which cannot fail with a 4xx.
+  # Router-level 404/405s are documented once in info.description instead.
+  operation-4xx-response: off

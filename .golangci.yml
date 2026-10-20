@@ -1,0 +1,46 @@
+version: "2"
+
+run:
+  build-tags:
+    - e2e
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - contextcheck
+    - errname
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - perfsprint
+    - revive
+    - sloglint
+    - unconvert
+    - unparam
+    - usestdlibvars
+  settings:
+    sloglint:
+      kv-only: false
+      attr-only: false
+      no-global: default
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - noctx
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/asilluron/lcars-api

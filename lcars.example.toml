@@ -1,0 +1,45 @@
+# LCARS API configuration.
+#
+# Copy this file to lcars.toml and edit it:
+#
+#   cp lcars.example.toml lcars.toml
+#
+# lcars.toml is gitignored, so your paths and settings stay on your machine.
+# The server reads ./lcars.toml from its working directory, or the file named
+# by the LCARS_CONFIG environment variable.
+#
+# Every setting is optional; the defaults are shown commented out. Each one can
+# also be set with the environment variable named next to it, which takes
+# precedence over this file. All values are strings, so keep the quotes.
+
+# Address to listen on. Use "127.0.0.1:8080" to accept local connections only.
+# Env: LCARS_ADDR
+# addr = ":8080"
+
+# Log verbosity: "debug", "info", "warn" or "error".
+# Env: LCARS_LOG_LEVEL
+# log_level = "info"
+
+# Log format: "json" (one object per line) or "text" (easier to read).
+# Env: LCARS_LOG_FORMAT
+# log_format = "json"
+
+# How long to let in-flight requests finish on shutdown.
+# Env: LCARS_SHUTDOWN_TIMEOUT
+# shutdown_timeout = "10s"
+
+# Timezone for "today" and for event times, as an IANA name such as
+# "America/New_York" or "Europe/Berlin". Defaults to the host's timezone.
+# Env: LCARS_TIMEZONE
+# timezone = "America/New_York"
+
+[calendar]
+# Directory of .ics files to serve at GET /calendar. Subdirectories are read
+# too. "~/" means your home directory, and a relative path is relative to
+# this file. Leave unset to disable the calendar.
+# Env: LCARS_CALENDAR_DIR
+# dir = "~/Calendars"
+
+# How often to re-read the directory. Minimum "1s".
+# Env: LCARS_CALENDAR_REFRESH_INTERVAL
+# refresh_interval = "1h"

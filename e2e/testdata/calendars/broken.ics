@@ -1,0 +1,2 @@
+This file is deliberately not valid iCalendar.
+The server must skip it and still serve the other files.

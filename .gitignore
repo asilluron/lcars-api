@@ -31,3 +31,9 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Build output
+bin/
+
+# Local config: copy lcars.example.toml to lcars.toml. Never commit it.
+lcars.toml
