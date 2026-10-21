@@ -158,6 +158,24 @@ func TestHomeDirExpansion(t *testing.T) {
 	}
 }
 
+func TestLoadTLSDir(t *testing.T) {
+	path := writeConfig(t, `
+[nats]
+tls_hosts = "192.0.2.10, nats.example.com"
+tls_dir = "nats-tls"
+`)
+	cfg, err := Load(env(map[string]string{"LCARS_CONFIG": path}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NATS.TLSDir != filepath.Join(filepath.Dir(path), "nats-tls") {
+		t.Errorf("TLSDir = %q", cfg.NATS.TLSDir)
+	}
+	if strings.Join(cfg.NATS.TLSHosts, ",") != "192.0.2.10,nats.example.com" {
+		t.Errorf("TLSHosts = %v", cfg.NATS.TLSHosts)
+	}
+}
+
 func TestLoadInvalid(t *testing.T) {
 	tests := map[string]struct {
 		file    string // config file content; "" means no file
@@ -172,6 +190,9 @@ func TestLoadInvalid(t *testing.T) {
 		"nats addr no port":    {env: map[string]string{"LCARS_NATS_ADDR": "localhost"}, wantErr: "LCARS_NATS_ADDR"},
 		"nats addr bad port":   {env: map[string]string{"LCARS_NATS_ADDR": ":nats"}, wantErr: "invalid port"},
 		"nats addr big port":   {env: map[string]string{"LCARS_NATS_ADDR": ":65536"}, wantErr: "invalid port"},
+		"tls cert without key": {env: map[string]string{"LCARS_NATS_TLS_CERT": "/srv/lcars/server.pem"}, wantErr: "tls_cert and tls_key"},
+		"tls hosts need a dir": {env: map[string]string{"LCARS_NATS_TLS_HOSTS": "192.0.2.10"}, wantErr: "tls_hosts needs tls_dir"},
+		"tls host not a name":  {env: map[string]string{"LCARS_NATS_TLS_HOSTS": "not a host"}, wantErr: "DNS name or IP"},
 		"missing named file":   {env: map[string]string{"LCARS_CONFIG": "/nonexistent/lcars.toml"}, wantErr: "read config file"},
 		"invalid toml":         {file: "addr = ", wantErr: "parse config file"},
 		"unknown key":          {file: "listen = \":80\"", wantErr: `unknown setting "listen"`},

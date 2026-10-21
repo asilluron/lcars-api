@@ -193,6 +193,10 @@ startup.
 | `calendar.refresh_interval` | `LCARS_CALENDAR_REFRESH_INTERVAL` | `1h`             | How often to re-read `calendar.dir`. Minimum `1s` |
 | `nats.addr`                 | `LCARS_NATS_ADDR`                 | `:4222`          | Listen address of the embedded NATS server. Ignored when `nats.url` is set |
 | `nats.url`                  | `LCARS_NATS_URL`                  | unset (embedded) | Use an existing NATS server instead of the embedded one, e.g. `nats://192.0.2.10:4222` (comma-separate several). If it is unreachable at startup, the server exits; later it reconnects on its own |
+| `nats.tls_cert`             | `LCARS_NATS_TLS_CERT`             | unset            | PEM certificate for the embedded server. With `nats.tls_key`, clients use `tls://`. Ignored when `nats.url` is set |
+| `nats.tls_key`              | `LCARS_NATS_TLS_KEY`              | unset            | PEM private key matching `nats.tls_cert` |
+| `nats.tls_hosts`            | `LCARS_NATS_TLS_HOSTS`            | unset            | Comma-separated DNS names and IPs that must be in the certificate SAN. When `tls_cert` is unset, a CA and certificate are created in `nats.tls_dir` on first start and reused. Delete that directory to mint a new CA |
+| `nats.tls_dir`              | `LCARS_NATS_TLS_DIR`              | unset            | Directory for the generated `ca.pem`, `ca.key`, `server.pem` and `server.key`. Devices trust `ca.pem` |
 
 ## Docker
 

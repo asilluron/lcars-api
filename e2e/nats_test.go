@@ -3,7 +3,9 @@
 package e2e
 
 import (
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -359,6 +361,81 @@ func TestNATSExternalServer(t *testing.T) {
 	if !p.hasLog(map[string]any{"msg": "nats reconnected"}) {
 		t.Errorf("missing nats reconnected log line\nstdout: %s", p.stdout.String())
 	}
+}
+
+// TestNATSTLS checks that the embedded server speaks TLS, that the
+// certificate lists the configured IP, and that the calendar API answers
+// on that connection. A second launch uses the generated files via the
+// cert and key settings.
+func TestNATSTLS(t *testing.T) {
+	dir := t.TempDir()
+	p := startServer(t,
+		"LCARS_NATS_TLS_DIR="+dir,
+		"LCARS_NATS_TLS_HOSTS=127.0.0.1",
+	)
+	if !p.hasLog(map[string]any{"msg": "nats tls enabled", "hosts": "127.0.0.1"}) {
+		t.Fatalf("missing tls log\nstdout: %s", p.stdout.String())
+	}
+	cert := parsePEMCert(t, filepath.Join(dir, "server.pem"))
+	if !certHasIP(cert, net.ParseIP("127.0.0.1")) {
+		t.Fatalf("certificate IPs = %v, want 127.0.0.1", cert.IPAddresses)
+	}
+
+	plain, err := nats.Connect("nats://"+p.natsAddr, nats.Timeout(2*time.Second), nats.MaxReconnects(0))
+	if err == nil {
+		plain.Close()
+		t.Fatal("plain nats connected; tls should be required")
+	}
+	nc := connectTLS(t, "tls://"+p.natsAddr, filepath.Join(dir, "ca.pem"))
+	if _, err := requestCalendar(nc, "", 0); err == nil || !strings.Contains(err.Error(), "503") {
+		t.Fatalf("calendar over tls = %v, want a 503 (no calendar)", err)
+	}
+
+	again := startServer(t,
+		"LCARS_NATS_TLS_CERT="+filepath.Join(dir, "server.pem"),
+		"LCARS_NATS_TLS_KEY="+filepath.Join(dir, "server.key"),
+		"LCARS_NATS_TLS_HOSTS=127.0.0.1",
+	)
+	nc = connectTLS(t, "tls://"+again.natsAddr, filepath.Join(dir, "ca.pem"))
+	if _, err := requestCalendar(nc, "", 0); err == nil || !strings.Contains(err.Error(), "503") {
+		t.Fatalf("calendar over supplied cert = %v, want a 503", err)
+	}
+}
+
+func connectTLS(t *testing.T, url, ca string) *nats.Conn {
+	t.Helper()
+	nc, err := nats.Connect(url, nats.RootCAs(ca), nats.Timeout(5*time.Second))
+	if err != nil {
+		t.Fatalf("connect to %s: %v", url, err)
+	}
+	t.Cleanup(nc.Close)
+	return nc
+}
+
+func parsePEMCert(t *testing.T, path string) *x509.Certificate {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		t.Fatalf("%s is not a PEM certificate", path)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
+}
+
+func certHasIP(cert *x509.Certificate, ip net.IP) bool {
+	for _, candidate := range cert.IPAddresses {
+		if candidate.Equal(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // startNATSServer runs a NATS server on addr for the rest of the test.

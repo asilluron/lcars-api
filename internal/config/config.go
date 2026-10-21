@@ -56,6 +56,16 @@ type NATS struct {
 	URL string
 	// Addr is the address the embedded NATS server listens on.
 	Addr string
+	// TLSCert and TLSKey are PEM files for the embedded server. When both are
+	// set, network clients connect with tls://. Ignored when URL is set.
+	TLSCert string
+	TLSKey  string
+	// TLSHosts are DNS names and IPs that must be in the certificate SAN.
+	// When TLSCert is empty, a CA and server certificate are generated in
+	// TLSDir on first start and reused after that.
+	TLSHosts []string
+	// TLSDir is where a generated CA and server certificate are stored.
+	TLSDir string
 }
 
 // Calendar configures the calendar feed.
@@ -130,6 +140,38 @@ var settings = []setting{
 		c.NATS.URL = v
 		return nil
 	}},
+	{"nats.tls_cert", "LCARS_NATS_TLS_CERT", func(c *Config, v, base string) error {
+		path, err := resolvePath(v, base)
+		if err != nil {
+			return err
+		}
+		c.NATS.TLSCert = path
+		return nil
+	}},
+	{"nats.tls_key", "LCARS_NATS_TLS_KEY", func(c *Config, v, base string) error {
+		path, err := resolvePath(v, base)
+		if err != nil {
+			return err
+		}
+		c.NATS.TLSKey = path
+		return nil
+	}},
+	{"nats.tls_hosts", "LCARS_NATS_TLS_HOSTS", func(c *Config, v, _ string) error {
+		hosts, err := parseTLSHosts(v)
+		if err != nil {
+			return err
+		}
+		c.NATS.TLSHosts = hosts
+		return nil
+	}},
+	{"nats.tls_dir", "LCARS_NATS_TLS_DIR", func(c *Config, v, base string) error {
+		path, err := resolvePath(v, base)
+		if err != nil {
+			return err
+		}
+		c.NATS.TLSDir = path
+		return nil
+	}},
 }
 
 // EnvVars returns the environment variable of every setting.
@@ -192,7 +234,64 @@ func Load(getenv func(string) string) (Config, error) {
 			}
 		}
 	}
+	if err := cfg.NATS.validate(); err != nil {
+		return Config{}, fmt.Errorf("nats: %w", err)
+	}
 	return cfg, nil
+}
+
+// validate checks combinations of TLS settings. The files themselves are
+// read when the server starts.
+func (n NATS) validate() error {
+	switch {
+	case (n.TLSCert == "") != (n.TLSKey == ""):
+		return errors.New("tls_cert and tls_key must both be set")
+	case len(n.TLSHosts) > 0 && n.TLSCert == "" && n.TLSDir == "":
+		return errors.New("tls_hosts needs tls_dir, or tls_cert and tls_key")
+	case n.TLSDir != "" && n.TLSCert == "" && len(n.TLSHosts) == 0:
+		return errors.New("tls_dir needs tls_hosts")
+	default:
+		return nil
+	}
+}
+
+// parseTLSHosts splits a comma-separated list of DNS names and IP addresses.
+func parseTLSHosts(value string) ([]string, error) {
+	var hosts []string
+	for part := range strings.SplitSeq(value, ",") {
+		host := strings.TrimSpace(part)
+		if host == "" {
+			continue
+		}
+		if net.ParseIP(host) == nil && !validDNS(host) {
+			return nil, fmt.Errorf("want a DNS name or IP, got %q", host)
+		}
+		hosts = append(hosts, host)
+	}
+	if len(hosts) == 0 {
+		return nil, errors.New("list at least one DNS name or IP")
+	}
+	return hosts, nil
+}
+
+func validDNS(host string) bool {
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	for label := range strings.SplitSeq(host, ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		for i, r := range label {
+			switch {
+			case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			case r == '-' && i > 0 && i < len(label)-1:
+			default:
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // readFile parses the TOML config file at path into a map from dotted key to

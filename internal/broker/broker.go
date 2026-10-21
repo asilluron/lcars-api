@@ -57,14 +57,17 @@ func Start(cfg config.NATS, logger *slog.Logger) (*Broker, error) {
 
 	serverURL := cfg.URL
 	if serverURL == "" {
-		ns, err := startServer(cfg.Addr, logger)
+		ns, err := startServer(cfg, logger)
 		if err != nil {
 			return nil, err
 		}
 		b.server = ns
-		serverURL = ns.ClientURL()
+		// ClientURL uses tls:// once a certificate is set. The in-process
+		// pipe is not wrapped in TLS, so connect to it as nats://.
+		clientURL := ns.ClientURL()
+		serverURL = inProcessURL(clientURL)
 		opts = append(opts, nats.InProcessServer(ns))
-		logger.Info("nats server listening", "addr", ns.Addr().String())
+		logger.Info("nats server listening", "addr", ns.Addr().String(), "tls", strings.HasPrefix(clientURL, "tls://"))
 	}
 
 	nc, err := nats.Connect(serverURL, opts...)
@@ -100,10 +103,24 @@ func (b *Broker) Close(ctx context.Context) error {
 	return err
 }
 
-// startServer runs an embedded NATS server on addr ("host:port"; port 0
+// inProcessURL rewrites a tls ClientURL to nats. The embedded server's
+// in-process pipe speaks the plaintext NATS handshake; network clients
+// still use tls:// and the certificate.
+func inProcessURL(raw string) string {
+	if rest, ok := strings.CutPrefix(raw, "tls://"); ok {
+		return "nats://" + rest
+	}
+	return raw
+}
+
+// startServer runs an embedded NATS server on cfg.Addr ("host:port"; port 0
 // picks a free one) and waits until it accepts clients.
-func startServer(addr string, logger *slog.Logger) (*server.Server, error) {
-	host, portStr, err := net.SplitHostPort(addr)
+func startServer(cfg config.NATS, logger *slog.Logger) (*server.Server, error) {
+	certFile, keyFile, err := prepareTLS(cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+	host, portStr, err := net.SplitHostPort(cfg.Addr)
 	if err != nil {
 		return nil, fmt.Errorf("nats address: %w", err)
 	}
@@ -115,12 +132,24 @@ func startServer(addr string, logger *slog.Logger) (*server.Server, error) {
 		port = server.RANDOM_PORT // 0 would mean the default port, 4222
 	}
 
-	ns, err := server.NewServer(&server.Options{
+	opts := &server.Options{
 		ServerName: "lcars-api",
 		Host:       host,
 		Port:       port,
 		NoSigs:     true, // signals are handled by main
-	})
+	}
+	if certFile != "" {
+		tlsConfig, err := server.GenTLSConfig(&server.TLSConfigOpts{
+			CertFile: certFile,
+			KeyFile:  keyFile,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("nats tls: %w", err)
+		}
+		opts.TLSConfig = tlsConfig
+		opts.TLSTimeout = 2
+	}
+	ns, err := server.NewServer(opts)
 	if err != nil {
 		return nil, fmt.Errorf("start NATS server: %w", err)
 	}
@@ -134,11 +163,11 @@ func startServer(addr string, logger *slog.Logger) (*server.Server, error) {
 		}
 		if msg := log.fatal.Load(); msg != nil {
 			ns.Shutdown()
-			return nil, fmt.Errorf("start NATS server on %s: %s", addr, *msg)
+			return nil, fmt.Errorf("start NATS server on %s: %s", cfg.Addr, *msg)
 		}
 	}
 	ns.Shutdown()
-	return nil, fmt.Errorf("start NATS server on %s: not ready after %s", addr, startTimeout)
+	return nil, fmt.Errorf("start NATS server on %s: not ready after %s", cfg.Addr, startTimeout)
 }
 
 // serverLogger sends the embedded server's logs to slog. Its notices (a

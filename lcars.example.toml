@@ -57,6 +57,28 @@
 # addr = ":4222"
 
 # Connect to an existing NATS server instead of running the embedded one.
-# Several servers can be listed, separated by commas.
+# Several servers can be listed, separated by commas. The TLS settings below
+# apply only to the embedded server, and are ignored when url is set.
 # Env: LCARS_NATS_URL
 # url = "nats://192.0.2.10:4222"
+
+# PEM certificate and private key for the embedded server. When both are set,
+# devices connect with tls://. The certificate's subject alternative names
+# must include every DNS name or IP they dial.
+# Env: LCARS_NATS_TLS_CERT
+# tls_cert = "/srv/lcars/server.pem"
+
+# Env: LCARS_NATS_TLS_KEY
+# tls_key = "/srv/lcars/server.key"
+
+# DNS names and IP addresses that must appear in the certificate, separated
+# by commas. When tls_cert and tls_key are unset, a CA and server certificate
+# are written to tls_dir on first start and reused after that. Delete that
+# directory to mint a new CA; devices then need the new ca.pem.
+# Env: LCARS_NATS_TLS_HOSTS
+# tls_hosts = "192.0.2.10"
+
+# Directory for a generated CA (ca.pem, ca.key) and server certificate
+# (server.pem, server.key). Required when tls_hosts is set without tls_cert.
+# Env: LCARS_NATS_TLS_DIR
+# tls_dir = "/srv/lcars/nats-tls"

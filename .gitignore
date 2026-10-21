@@ -38,3 +38,6 @@ rust/target/
 
 # Local config: copy lcars.example.toml to lcars.toml. Never commit it.
 lcars.toml
+
+# Generated NATS TLS material, including the private key.
+nats-tls/
