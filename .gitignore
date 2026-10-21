@@ -34,6 +34,7 @@ go.work.sum
 
 # Build output
 bin/
+rust/target/
 
 # Local config: copy lcars.example.toml to lcars.toml. Never commit it.
 lcars.toml

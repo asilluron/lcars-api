@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/nats-io/nats.go"
+
 	"github.com/asilluron/lcars-api/internal/calendar"
 )
 
@@ -12,6 +14,8 @@ import (
 // endpoints that need it; they answer 503 Service Unavailable.
 type Deps struct {
 	Calendar *calendar.Store
+	// NATS is the connection the API is served on, for /healthz.
+	NATS *nats.Conn
 }
 
 // New returns the root handler with all routes and middleware attached.
@@ -34,7 +38,7 @@ type router interface {
 // addRoutes is the single place to see every route the API exposes. Each route
 // must also be documented in api/openapi.json; TestRoutesMatchOpenAPI checks.
 func addRoutes(mux router, logger *slog.Logger, deps Deps) {
-	mux.Handle("GET /healthz", handle(logger, healthz))
+	mux.Handle("GET /healthz", handle(logger, healthz(deps.NATS)))
 	mux.Handle("GET /calendar", handle(logger, calendarHandler(deps.Calendar)))
 	mux.Handle("GET /openapi.json", handle(logger, openAPI))
 	mux.Handle("GET /docs", handle(logger, docs))

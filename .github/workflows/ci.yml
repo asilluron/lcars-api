@@ -41,6 +41,21 @@ jobs:
           version: v2.15
       - name: Lint OpenAPI document
         run: make api-lint
+      - name: Lint protobuf and check generated code is up to date
+        run: |
+          make proto
+          git add --intent-to-add gen rust/src/gen
+          git diff --exit-code -- gen rust/src/gen || {
+            echo "::error::Generated code is out of date: run 'make proto' and commit the result."
+            exit 1
+          }
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rust crate (fmt, clippy, tests, no_std build)
+        run: make rust
 
   e2e:
     runs-on: ubuntu-latest
@@ -49,7 +64,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: End-to-end tests (binary + Docker image)
+      - name: End-to-end tests (binary, Docker image, Rust client)
         run: go test -tags e2e -count=1 -v ./e2e/...
         env:
           E2E_REQUIRE_DOCKER: "1"

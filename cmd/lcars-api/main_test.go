@@ -9,14 +9,14 @@ import (
 	"time"
 )
 
-// TestRun starts the real server on a free port, checks /healthz, then
-// cancels the context and expects a clean shutdown.
+// TestRun starts the real server on free ports, with an embedded NATS server,
+// checks /healthz, then cancels the context and expects a clean shutdown.
 func TestRun(t *testing.T) {
 	addr := freeAddr(t)
 	ctx, cancel := context.WithCancel(t.Context())
 
 	getenv := func(k string) string {
-		return map[string]string{"LCARS_ADDR": addr}[k]
+		return map[string]string{"LCARS_ADDR": addr, "LCARS_NATS_ADDR": "127.0.0.1:0"}[k]
 	}
 	done := make(chan error, 1)
 	go func() { done <- run(ctx, getenv, io.Discard) }()

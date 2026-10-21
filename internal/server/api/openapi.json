@@ -3,8 +3,8 @@
   "info": {
     "title": "LCARS API",
     "version": "{{VERSION}}",
-    "summary": "LCARS for home: a lightweight HTTP API for LCARS.",
-    "description": "LCARS API is a small HTTP server built on Go's standard library. This reference is generated from the OpenAPI document the server itself serves at [`/openapi.json`](/openapi.json), and the version shown above is the version of the running build.\n\n## Conventions\n\n- **Encoding.** Request and response bodies are JSON (`Content-Type: application/json`) unless an operation says otherwise.\n- **`HEAD`.** Every `GET` operation also answers `HEAD`, with the same status and headers and no body.\n- **Authentication.** None. The API is meant to run on a trusted home network; put it behind a reverse proxy if you need authentication or TLS.\n- **Dates and times.** Dates are `YYYY-MM-DD`. Timestamps are [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) with the UTC offset of the server's timezone, e.g. `2026-10-20T09:00:00-04:00`.\n- **Versioning.** Paths are not versioned yet. The build version is reported by [`GET /healthz`](#operation/getHealth).\n\n## Errors\n\nErrors raised by an operation have a JSON body with a single `error` field:\n\n```json\n{\"error\": \"Internal Server Error\"}\n```\n\nUnexpected failures, including panics, are logged on the server and returned as a `500` with a generic message, so internal details never reach the client.\n\nRouting errors come from the router before any operation runs, and have a **plain-text** body:\n\n| Status | When | Body |\n|--------|------|------|\n| `404` | No route matches the path. | `404 page not found` |\n| `405` | The path exists, but not for this method. The `Allow` header lists the methods that are, e.g. `Allow: GET, HEAD`. | `Method Not Allowed` |\n\n## Timeouts\n\nThe server closes connections that are slow to send headers (5 s) or a request (15 s), and responses that take longer than 15 s to write. Idle keep-alive connections are closed after 60 s. On `SIGTERM` or `SIGINT` it stops accepting new connections and waits for in-flight requests to finish before exiting.",
+    "summary": "LCARS for home: the HTTP side of the LCARS home display API.",
+    "description": "The LCARS home display API is served primarily over **NATS**, with protobuf message bodies. This reference covers the HTTP server that runs alongside it: a health check, these docs, and JSON versions of the NATS endpoints for debugging and simple clients.\n\n## NATS API\n\nDevices connect to the NATS server lcars-api runs (port `4222` by default) or to the one it is configured to use. Message bodies are protobuf messages defined in [`proto/lcars/v1`](https://github.com/asilluron/lcars-api/tree/main/proto/lcars/v1); generated Rust (prost) types are in the `lcars-proto` crate in [`rust/`](https://github.com/asilluron/lcars-api/tree/main/rust).\n\n| Subject | Kind | Messages | HTTP equivalent |\n|---------|------|----------|-----------------|\n| `lcars.calendar.get` | request/reply | `GetCalendarRequest` → `GetCalendarResponse` | [`GET /calendar`](#operation/getCalendar) |\n| `lcars.calendar.updated` | event | `CalendarUpdated`, published when the `.ics` files change | none |\n\nNATS error replies have an empty body and the headers `Nats-Service-Error-Code` (the same status code the HTTP endpoint would return) and `Nats-Service-Error` (the message). The service is named `lcars`, so it also answers `$SRV.PING.lcars`, `$SRV.INFO.lcars` and `$SRV.STATS.lcars`.\n\nThis reference is generated from the OpenAPI document the server itself serves at [`/openapi.json`](/openapi.json), and the version shown above is the version of the running build.\n\n## Conventions\n\n- **Encoding.** Request and response bodies are JSON (`Content-Type: application/json`) unless an operation says otherwise.\n- **`HEAD`.** Every `GET` operation also answers `HEAD`, with the same status and headers and no body.\n- **Authentication.** None, over HTTP or NATS. The API is meant to run on a trusted home network; put it behind a reverse proxy if you need authentication or TLS.\n- **Dates and times.** Dates are `YYYY-MM-DD`. Timestamps are [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) with the UTC offset of the server's timezone, e.g. `2026-10-20T09:00:00-04:00`.\n- **Versioning.** Paths are not versioned yet. The build version is reported by [`GET /healthz`](#operation/getHealth).\n\n## Errors\n\nErrors raised by an operation have a JSON body with a single `error` field:\n\n```json\n{\"error\": \"Internal Server Error\"}\n```\n\nUnexpected failures, including panics, are logged on the server and returned as a `500` with a generic message, so internal details never reach the client.\n\nRouting errors come from the router before any operation runs, and have a **plain-text** body:\n\n| Status | When | Body |\n|--------|------|------|\n| `404` | No route matches the path. | `404 page not found` |\n| `405` | The path exists, but not for this method. The `Allow` header lists the methods that are, e.g. `Allow: GET, HEAD`. | `Method Not Allowed` |\n\n## Timeouts\n\nThe server closes connections that are slow to send headers (5 s) or a request (15 s), and responses that take longer than 15 s to write. Idle keep-alive connections are closed after 60 s. On `SIGTERM` or `SIGINT` it stops accepting new connections and waits for in-flight requests to finish before exiting.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -20,7 +20,7 @@
   "tags": [
     {
       "name": "System",
-      "description": "Process health and build information."
+      "description": "Process health, build information and NATS connection state."
     },
     {
       "name": "Calendar",
@@ -38,11 +38,11 @@
         "tags": [
           "System"
         ],
-        "summary": "Check liveness",
-        "description": "Reports that the process is up and serving requests, along with the build version. Use it for container liveness probes and uptime checks. It does no other work, so it is cheap to call often.",
+        "summary": "Check health",
+        "description": "Reports that the process is up, along with the build version and the state of the NATS connection the API is served on. Answers `503` while that connection is down (for example, while an external NATS server is restarting); lcars-api reconnects on its own. It does no other work, so it is cheap to call often.",
         "responses": {
           "200": {
-            "description": "The server is up.",
+            "description": "The server is up and connected to NATS.",
             "content": {
               "application/json": {
                 "schema": {
@@ -50,7 +50,23 @@
                 },
                 "example": {
                   "status": "ok",
-                  "version": "v1.2.0"
+                  "version": "v1.2.0",
+                  "nats": "connected"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is up, but its NATS connection is down, so NATS clients can't reach it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                },
+                "example": {
+                  "status": "unavailable",
+                  "version": "v1.2.0",
+                  "nats": "disconnected"
                 }
               }
             }
@@ -68,7 +84,7 @@
           "Calendar"
         ],
         "summary": "List events by day",
-        "description": "Returns the events in a range of days, grouped by day, ready to draw as an agenda or week view. Every day in the range is present, in order, even if it has no events.\n\nDates and times are in the server's timezone (`timezone` in the config file, or the host's), which the response reports. An event that spans several days appears on each of them. Within a day, all-day events come first, then timed events by start time.\n\nEvents are read from disk periodically, not on each request; `updated_at` says when they were last read.",
+        "description": "Returns the events in a range of days, grouped by day, ready to draw as an agenda or week view. Every day in the range is present, in order, even if it has no events.\n\nDates and times are in the server's timezone (`timezone` in the config file, or the host's), which the response reports. An event that spans several days appears on each of them. Within a day, all-day events come first, then timed events by start time.\n\nEvents are read from disk periodically, not on each request; `updated_at` says when they were last read.\n\nThe same data is available over NATS as a protobuf `GetCalendarResponse`, by sending a `GetCalendarRequest` on `lcars.calendar.get`. Subscribe to `lcars.calendar.updated` to learn when to fetch it again.",
         "parameters": [
           {
             "name": "from",
@@ -284,8 +300,11 @@
         "properties": {
           "status": {
             "type": "string",
-            "const": "ok",
-            "description": "Always `ok`. A server that is not healthy does not answer at all."
+            "enum": [
+              "ok",
+              "unavailable"
+            ],
+            "description": "`ok` if the server is fully working; `unavailable` if its NATS connection is down."
           },
           "version": {
             "type": "string",
@@ -295,6 +314,14 @@
               "v1.2.0-3-g1a2b3c4-dirty",
               "(devel)"
             ]
+          },
+          "nats": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "disconnected"
+            ],
+            "description": "State of the NATS connection the API is served on."
           }
         }
       },

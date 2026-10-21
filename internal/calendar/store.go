@@ -3,9 +3,12 @@
 package calendar
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -44,6 +47,9 @@ type Store struct {
 
 type snapshot struct {
 	loadedAt time.Time
+	// digest is a hash of the files read, to tell whether a reload changed
+	// anything.
+	digest [sha256.Size]byte
 	// mu serializes expansion: rrule.Set sorts its date lists in place on every
 	// query, so two queries can't run on the same set at once.
 	mu     sync.Mutex
@@ -70,10 +76,17 @@ func (s *Store) Location() *time.Location { return s.loc }
 // hide the rest. Load fails only if the directory itself can't be read; the
 // previously loaded events are then kept.
 func (s *Store) Load() error {
+	_, err := s.load()
+	return err
+}
+
+// load is Load, also reporting whether any file was added, removed or changed
+// since the previous load.
+func (s *Store) load() (changed bool, err error) {
 	began := time.Now()
 	root, err := os.OpenRoot(s.dir)
 	if err != nil {
-		return fmt.Errorf("open calendar directory: %w", err)
+		return false, fmt.Errorf("open calendar directory: %w", err)
 	}
 	defer root.Close()
 
@@ -82,6 +95,7 @@ func (s *Store) Load() error {
 		replaced = map[string][]time.Time{}
 		files    int
 		skipped  int
+		digest   = sha256.New()
 	)
 	err = fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -101,7 +115,7 @@ func (s *Store) Load() error {
 			return nil
 		}
 		files++
-		parsed, err := s.loadFile(root, p)
+		parsed, err := s.loadFile(root, p, digest)
 		if err != nil {
 			skipped++
 			s.logger.Warn("calendar: skipping file", "path", p, "err", err)
@@ -114,7 +128,7 @@ func (s *Store) Load() error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("read calendar directory: %w", err)
+		return false, fmt.Errorf("read calendar directory: %w", err)
 	}
 
 	// Drop the occurrences of recurring events that a RECURRENCE-ID override
@@ -127,33 +141,40 @@ func (s *Store) Load() error {
 		}
 	}
 
-	s.snap.Store(&snapshot{loadedAt: time.Now(), series: all})
+	snap := &snapshot{loadedAt: time.Now(), series: all}
+	digest.Sum(snap.digest[:0])
+	prev := s.snap.Swap(snap)
+	changed = snap.digest != prev.digest
 	s.logger.Info("calendar loaded",
 		"dir", s.dir, "files", files, "skipped", skipped, "events", len(all),
-		"duration", time.Since(began))
-	return nil
+		"changed", changed, "duration", time.Since(began))
+	return changed, nil
 }
 
 // loadFile parses one .ics file. Its events belong to the calendar named by
 // X-WR-CALNAME if set, otherwise by the top-level subdirectory the file is in,
-// otherwise by the file name without its extension.
-func (s *Store) loadFile(root *os.Root, p string) (*parsed, error) {
-	f, err := root.Open(p)
+// otherwise by the file name without its extension. The file's path and
+// contents are added to digest.
+func (s *Store) loadFile(root *os.Root, p string, digest io.Writer) (*parsed, error) {
+	data, err := root.ReadFile(p)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	fmt.Fprintf(digest, "%s\x00%d\x00", p, len(data))
+	_, _ = digest.Write(data) // hashes don't fail
 
 	name, _, nested := strings.Cut(p, "/")
 	if !nested {
 		name = strings.TrimSuffix(name, path.Ext(name))
 	}
-	return parse(f, name, s.loc)
+	return parse(bytes.NewReader(data), name, s.loc)
 }
 
 // Run reloads the directory every interval until ctx is done. A failed reload
-// is logged, and the previous events are kept.
-func (s *Store) Run(ctx context.Context, interval time.Duration) {
+// is logged, and the previous events are kept. If onChange is not nil, it is
+// called after each reload that found added, removed or changed files, with
+// the time of the reload.
+func (s *Store) Run(ctx context.Context, interval time.Duration, onChange func(loadedAt time.Time)) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -161,8 +182,11 @@ func (s *Store) Run(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if err := s.Load(); err != nil {
+			changed, err := s.load()
+			if err != nil {
 				s.logger.ErrorContext(ctx, "calendar refresh failed; serving previous events", "err", err)
+			} else if changed && onChange != nil {
+				onChange(s.snap.Load().loadedAt)
 			}
 		}
 	}

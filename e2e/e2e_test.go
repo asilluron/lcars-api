@@ -5,8 +5,12 @@
 //
 //	go test -tags e2e -count=1 ./e2e/...
 //
-// The Docker tests are skipped when no Docker daemon is reachable, unless
-// E2E_REQUIRE_DOCKER=1 is set (as in CI), in which case they fail instead.
+// The Docker tests (the image, and the Rust client against it) are skipped
+// when no Docker daemon is reachable, unless E2E_REQUIRE_DOCKER=1 is set (as
+// in CI), in which case they fail instead.
+//
+// Every HTTP path, NATS subject and setting must be exercised by at least one
+// test here: a full run fails if any is not (see coverage.go).
 package e2e
 
 import (
@@ -26,6 +30,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/nats-io/nats.go"
 )
 
 const testVersion = "v0.0.0-e2e"
@@ -55,7 +61,10 @@ func runMain(m *testing.M) int {
 		fmt.Fprintln(os.Stderr, "e2e: build binary:", err)
 		return 1
 	}
-	return m.Run()
+	if code := m.Run(); code != 0 {
+		return code
+	}
+	return checkCoverage()
 }
 
 // --- binary tests ----------------------------------------------------------
@@ -74,7 +83,7 @@ func TestHealthz(t *testing.T) {
 	if err := json.Unmarshal(resp.body, &body); err != nil {
 		t.Fatalf("decode %q: %v", resp.body, err)
 	}
-	want := map[string]string{"status": "ok", "version": testVersion}
+	want := map[string]string{"status": "ok", "version": testVersion, "nats": "connected"}
 	for k, v := range want {
 		if body[k] != v {
 			t.Errorf("body[%q] = %q, want %q (body: %s)", k, body[k], v, resp.body)
@@ -161,12 +170,14 @@ func TestAPIDocs(t *testing.T) {
 }
 
 func TestConcurrentRequests(t *testing.T) {
-	p := startServer(t)
+	p := startServer(t, "LCARS_CALENDAR_DIR="+fixturesDir(t), "LCARS_TIMEZONE=America/New_York")
+	// Several NATS clients, like several displays.
+	conns := []*nats.Conn{connectNATS(t, p.natsURL()), connectNATS(t, p.natsURL()), connectNATS(t, p.natsURL())}
 
 	const n = 100
 	var wg sync.WaitGroup
-	errs := make(chan error, n)
-	for range n {
+	errs := make(chan error, 2*n)
+	for i := range n {
 		wg.Go(func() {
 			resp, err := do(http.MethodGet, p.url("/healthz"))
 			switch {
@@ -174,6 +185,14 @@ func TestConcurrentRequests(t *testing.T) {
 				errs <- err
 			case resp.StatusCode != http.StatusOK:
 				errs <- fmt.Errorf("status %d", resp.StatusCode)
+			}
+		})
+		wg.Go(func() {
+			cal, err := requestCalendar(conns[i%len(conns)], "2030-03-04", 7)
+			if err != nil {
+				errs <- err
+			} else if got := renderNATS(cal); strings.Join(got, "\n") != strings.Join(fixtureWeek, "\n") {
+				errs <- fmt.Errorf("NATS calendar = %q", got)
 			}
 		})
 	}
@@ -188,11 +207,15 @@ func TestRequestLogging(t *testing.T) {
 	p := startServer(t)
 	mustDo(t, http.MethodGet, p.url("/healthz"))
 	mustDo(t, http.MethodPost, p.url("/healthz"))
+	nc := connectNATS(t, p.natsURL())
+	natsRequest(t, nc, subjectCalendarGet, nil) // 503: no calendar configured
 
 	for _, want := range []map[string]any{
-		{"msg": "server listening", "level": "INFO", "version": testVersion},
+		{"msg": "http server listening", "level": "INFO", "version": testVersion, "addr": p.addr},
+		{"msg": "nats server listening", "level": "INFO", "addr": p.natsAddr},
 		{"msg": "request", "method": "GET", "path": "/healthz", "status": float64(200)},
 		{"msg": "request", "method": "POST", "path": "/healthz", "status": float64(405)},
+		{"msg": "nats request", "subject": subjectCalendarGet, "status": float64(503)},
 	} {
 		waitFor(t, 2*time.Second, fmt.Sprintf("log line matching %v", want), func() bool {
 			return p.hasLog(want)
@@ -203,7 +226,7 @@ func TestRequestLogging(t *testing.T) {
 func TestTextLogFormat(t *testing.T) {
 	p := startServer(t, "LCARS_LOG_FORMAT=text")
 	waitFor(t, 2*time.Second, "text-format startup log", func() bool {
-		return strings.Contains(p.stdout.String(), `msg="server listening"`)
+		return strings.Contains(p.stdout.String(), `msg="http server listening"`)
 	})
 }
 
@@ -217,6 +240,7 @@ func TestGracefulShutdown(t *testing.T) {
 		t.Run(sig.String(), func(t *testing.T) {
 			p := startServer(t)
 			mustDo(t, http.MethodGet, p.url("/healthz"))
+			nc := connectNATS(t, p.natsURL())
 
 			if err := p.cmd.Process.Signal(sig); err != nil {
 				t.Fatalf("signal: %v", err)
@@ -231,6 +255,14 @@ func TestGracefulShutdown(t *testing.T) {
 			}
 			if _, err := do(http.MethodGet, p.url("/healthz")); err == nil {
 				t.Error("server still accepting connections after shutdown")
+			}
+			// The embedded NATS server is gone too.
+			if conn, err := net.DialTimeout("tcp", p.natsAddr, time.Second); err == nil {
+				conn.Close()
+				t.Error("NATS server still accepting connections after shutdown")
+			}
+			if nc.IsConnected() {
+				t.Error("NATS client still connected after shutdown")
 			}
 		})
 	}
@@ -248,6 +280,8 @@ func TestInvalidConfigExits(t *testing.T) {
 		"timezone":         {"LCARS_TIMEZONE=Mars/Olympus_Mons", "LCARS_TIMEZONE"},
 		"refresh interval": {"LCARS_CALENDAR_REFRESH_INTERVAL=1ms", "LCARS_CALENDAR_REFRESH_INTERVAL"},
 		"missing cal dir":  {"LCARS_CALENDAR_DIR=" + filepath.Join(t.TempDir(), "missing"), "load calendar"},
+		"nats addr":        {"LCARS_NATS_ADDR=localhost", "LCARS_NATS_ADDR"},
+		"nats unreachable": {"LCARS_NATS_URL=nats://" + freeAddr(t), "connect to NATS"},
 		"missing config":   {"LCARS_CONFIG=" + filepath.Join(t.TempDir(), "lcars.toml"), "read config file"},
 		"unknown key":      {"LCARS_CONFIG=" + badFile, `unknown setting "calendar.directory"`},
 	}
@@ -266,28 +300,58 @@ func TestInvalidConfigExits(t *testing.T) {
 
 func TestPortInUseExits(t *testing.T) {
 	first := startServer(t)
-
-	second := launch(t, "LCARS_ADDR="+first.addr)
-	if code := second.wait(t); code != 1 {
-		t.Errorf("exit code = %d, want 1", code)
-	}
-	if !strings.Contains(second.stderr.String(), "address already in use") {
-		t.Errorf("stderr = %q, want address-in-use error", second.stderr.String())
+	for name, env := range map[string]string{
+		"http": "LCARS_ADDR=" + first.addr,
+		"nats": "LCARS_NATS_ADDR=" + first.natsAddr,
+	} {
+		t.Run(name, func(t *testing.T) {
+			second := launch(t, env)
+			if code := second.wait(t); code != 1 {
+				t.Errorf("exit code = %d, want 1", code)
+			}
+			if !strings.Contains(second.stderr.String(), "address already in use") {
+				t.Errorf("stderr = %q, want address-in-use error", second.stderr.String())
+			}
+		})
 	}
 	// The first server must be unaffected.
 	mustDo(t, http.MethodGet, first.url("/healthz"))
+	if _, err := requestCalendar(connectNATS(t, first.natsURL()), "", 0); err == nil ||
+		!strings.Contains(err.Error(), "503") {
+		t.Errorf("NATS request to first server = %v, want a 503 (no calendar)", err)
+	}
 }
 
 // --- Docker tests ----------------------------------------------------------
 
+// image is the Docker image built by buildImage.
+const image = "lcars-api:e2e"
+
+var buildImageOnce = sync.OnceValue(func() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", "build",
+		"--build-arg", "VERSION="+testVersion, "-t", image, "..").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker build: %w\n%s", err, out)
+	}
+	return nil
+})
+
+// buildImage builds the image once per test run.
+func buildImage(t *testing.T) {
+	t.Helper()
+	t.Log("building image (first build may take a minute)")
+	if err := buildImageOnce(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDockerImage(t *testing.T) {
 	requireDocker(t)
+	buildImage(t)
 
-	const image = "lcars-api:e2e"
-	t.Log("building image (first build may take a minute)")
-	docker(t, 5*time.Minute, "build", "--build-arg", "VERSION="+testVersion, "-t", image, "..")
-
-	cfg := strings.TrimSpace(docker(t, 30*time.Second, "image", "inspect", "-f", "{{.Config.User}}", image))
+	cfg := strings.TrimSpace(docker(t, "image", "inspect", "-f", "{{.Config.User}}", image))
 	if cfg != "nonroot:nonroot" {
 		t.Errorf("image user = %q, want nonroot:nonroot", cfg)
 	}
@@ -299,24 +363,27 @@ func TestDockerImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := writeConfigFile(t, "timezone = \"America/New_York\"\n\n[calendar]\ndir = \"/calendars\"\n")
-	id := strings.TrimSpace(docker(t, 30*time.Second, "run", "-d", "-p", "127.0.0.1::8080",
+	id := strings.TrimSpace(docker(t, "run", "-d",
+		"-p", "127.0.0.1::8080", "-p", "127.0.0.1::4222",
 		"-v", fixtures+":/calendars:ro",
 		"-v", config+":/config/lcars.toml:ro",
 		image))
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
 
-	hostPort := strings.TrimSpace(docker(t, 30*time.Second, "port", id, "8080/tcp"))
-	base := "http://" + strings.Split(hostPort, "\n")[0]
+	base := "http://" + dockerPort(t, id, "8080/tcp")
 	waitReady(t, base+"/healthz")
 
 	resp := mustDo(t, http.MethodGet, base+"/healthz")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(resp.body, []byte(testVersion)) {
-		t.Errorf("healthz = %d %s, want 200 with version %s", resp.StatusCode, resp.body, testVersion)
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(resp.body, []byte(testVersion)) ||
+		!bytes.Contains(resp.body, []byte(`"nats":"connected"`)) {
+		t.Errorf("healthz = %d %s, want 200 with version %s and NATS connected", resp.StatusCode, resp.body, testVersion)
 	}
-	// The calendar must work in the minimal image: config read from the
-	// working directory, the mounted directory readable by the nonroot user,
-	// and timezone data available without system zoneinfo files.
+	// The calendar must work in the minimal image, over HTTP and over the
+	// embedded NATS server on the default port: config read from the working
+	// directory, the mounted directory readable by the nonroot user, and
+	// timezone data available without system zoneinfo files.
 	checkFixtureWeek(t, base)
+	checkFixtureWeekNATS(t, "nats://"+dockerPort(t, id, "4222/tcp"))
 
 	// The spec and docs page are embedded in the binary, so they must be
 	// served from the image without any files next to it.
@@ -328,15 +395,22 @@ func TestDockerImage(t *testing.T) {
 
 	// docker stop sends SIGTERM; the server must drain and exit 0, not be
 	// SIGKILLed after the timeout (exit 137).
-	docker(t, 30*time.Second, "stop", "-t", "10", id)
-	code := strings.TrimSpace(docker(t, 30*time.Second, "inspect", "-f", "{{.State.ExitCode}}", id))
+	docker(t, "stop", "-t", "10", id)
+	code := strings.TrimSpace(docker(t, "inspect", "-f", "{{.State.ExitCode}}", id))
 	if code != "0" {
 		t.Errorf("container exit code = %s, want 0", code)
 	}
-	logs := docker(t, 30*time.Second, "logs", id)
+	logs := docker(t, "logs", id)
 	if !strings.Contains(logs, `"msg":"server stopped"`) {
 		t.Errorf("container logs missing clean shutdown:\n%s", logs)
 	}
+}
+
+// dockerPort returns the host address a container's port is published on.
+func dockerPort(t *testing.T, id, port string) string {
+	t.Helper()
+	out := strings.TrimSpace(docker(t, "port", id, port))
+	return strings.Split(out, "\n")[0]
 }
 
 func requireDocker(t *testing.T) {
@@ -351,7 +425,10 @@ func requireDocker(t *testing.T) {
 	t.Skipf("docker unavailable (%v); set E2E_REQUIRE_DOCKER=1 to fail instead", err)
 }
 
-func docker(t *testing.T, timeout time.Duration, args ...string) string {
+// docker runs a docker command that should finish quickly, and returns its
+// output.
+func docker(t *testing.T, args ...string) string {
+	const timeout = 30 * time.Second
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
@@ -368,17 +445,20 @@ func docker(t *testing.T, timeout time.Duration, args ...string) string {
 
 // server is a running lcars-api subprocess.
 type server struct {
-	cmd    *exec.Cmd
-	addr   string
-	stdout *syncBuffer
-	stderr *syncBuffer
+	cmd      *exec.Cmd
+	addr     string // HTTP
+	natsAddr string // the embedded NATS server
+	external string // LCARS_NATS_URL, if set
+	stdout   *syncBuffer
+	stderr   *syncBuffer
 
 	done     chan struct{}
 	exitCode int
 }
 
-// launch starts the binary on a free port without waiting for it to be ready.
-// Later env entries override earlier ones, so callers can replace LCARS_ADDR.
+// launch starts the binary on free ports (HTTP and NATS) without waiting for
+// it to be ready. Later env entries override earlier ones, so callers can
+// replace LCARS_ADDR and LCARS_NATS_ADDR.
 func launch(t *testing.T, env ...string) *server {
 	t.Helper()
 	return launchIn(t, "", env...)
@@ -388,17 +468,25 @@ func launch(t *testing.T, env ...string) *server {
 func launchIn(t *testing.T, dir string, env ...string) *server {
 	t.Helper()
 	p := &server{
-		addr:   freeAddr(t),
-		stdout: &syncBuffer{},
-		stderr: &syncBuffer{},
-		done:   make(chan struct{}),
+		addr:     freeAddr(t),
+		natsAddr: freeAddr(t),
+		stdout:   &syncBuffer{},
+		stderr:   &syncBuffer{},
+		done:     make(chan struct{}),
 	}
 	p.cmd = exec.Command(binPath)
 	p.cmd.Dir = dir
-	p.cmd.Env = append([]string{"LCARS_ADDR=" + p.addr}, env...)
-	for _, kv := range env {
-		if v, ok := strings.CutPrefix(kv, "LCARS_ADDR="); ok {
+	p.cmd.Env = append([]string{"LCARS_ADDR=" + p.addr, "LCARS_NATS_ADDR=" + p.natsAddr}, env...)
+	for _, kv := range p.cmd.Env {
+		key, v, _ := strings.Cut(kv, "=")
+		cover(settingsCoverage, key)
+		switch key {
+		case "LCARS_ADDR":
 			p.addr = v
+		case "LCARS_NATS_ADDR":
+			p.natsAddr = v
+		case "LCARS_NATS_URL":
+			p.external = v
 		}
 	}
 	p.cmd.Stdout, p.cmd.Stderr = p.stdout, p.stderr
@@ -444,6 +532,15 @@ func startServerIn(t *testing.T, dir string, env ...string) *server {
 }
 
 func (p *server) url(path string) string { return "http://" + p.addr + path }
+
+// natsURL is where NATS clients connect: the embedded server, or the external
+// one the binary was told to use.
+func (p *server) natsURL() string {
+	if p.external != "" {
+		return p.external
+	}
+	return "nats://" + p.natsAddr
+}
 
 // wait blocks until the process exits and returns its exit code, failing the
 // test if that takes more than 5 seconds.
@@ -492,6 +589,7 @@ func do(method, url string) (*response, error) {
 	if err != nil {
 		return nil, err
 	}
+	cover(pathCoverage, req.URL.Path)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

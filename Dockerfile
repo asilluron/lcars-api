@@ -24,6 +24,7 @@ COPY --from=build /out/lcars-api /lcars-api
 # The server reads lcars.toml from its working directory if present, so a
 # config file can be mounted at /config/lcars.toml.
 WORKDIR /config
-EXPOSE 8080
+# 4222: the embedded NATS server (the API). 8080: HTTP (health, docs, JSON).
+EXPOSE 4222 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/lcars-api"]

@@ -1,0 +1,11 @@
+# Buf configuration for the protobuf definitions in proto/.
+# Run `make proto` to lint and regenerate the Go and Rust code.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - WIRE_JSON

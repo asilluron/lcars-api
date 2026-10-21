@@ -326,8 +326,9 @@ func TestRun(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
+	changes := make(chan time.Time, 100)
 	go func() {
-		s.Run(ctx, 10*time.Millisecond)
+		s.Run(ctx, 10*time.Millisecond, func(loadedAt time.Time) { changes <- loadedAt })
 		close(done)
 	}()
 
@@ -335,15 +336,21 @@ func TestRun(t *testing.T) {
 		[]byte(vcal("", "UID:n\nSUMMARY:New\nDTSTART:20300305T100000")), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if got, _ := s.Events(day(4), day(11)); len(got) == 1 {
-			break
+	select {
+	case loadedAt := <-changes:
+		got, snapAt := s.Events(day(4), day(11))
+		assertEvents(t, got, "New 03-05 10:00→03-05 10:00")
+		if !loadedAt.Equal(snapAt) {
+			t.Errorf("onChange time = %v, want the load time %v", loadedAt, snapAt)
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("Run did not pick up the new file")
-		}
-		time.Sleep(10 * time.Millisecond)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not pick up the new file")
+	}
+
+	// Reloads that find nothing new don't call onChange.
+	time.Sleep(100 * time.Millisecond)
+	if n := len(changes); n != 0 {
+		t.Errorf("onChange called %d more times with no changes", n)
 	}
 
 	cancel()
@@ -351,6 +358,49 @@ func TestRun(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return after cancel")
+	}
+}
+
+func TestLoadChanged(t *testing.T) {
+	dir := writeFiles(t, map[string]string{"a.ics": vcal("", "UID:a\nSUMMARY:First\nDTSTART:20300305T100000")})
+	s := NewStore(dir, newYork, slog.New(slog.DiscardHandler))
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	steps := []struct {
+		name   string
+		change func()
+		want   bool
+	}{
+		{"first load", func() {}, true},
+		{"nothing changed", func() {}, false},
+		{"file edited", func() { write("a.ics", vcal("", "UID:a\nSUMMARY:Edited\nDTSTART:20300305T100000")) }, true},
+		{"file added", func() { write("b.ics", vcal("", "UID:b\nSUMMARY:Second\nDTSTART:20300306T100000")) }, true},
+		{"non-ics file added", func() { write("notes.txt", "not a calendar") }, false},
+		{"file renamed", func() {
+			if err := os.Rename(filepath.Join(dir, "b.ics"), filepath.Join(dir, "c.ics")); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+		{"file removed", func() {
+			if err := os.Remove(filepath.Join(dir, "c.ics")); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+		{"nothing changed again", func() {}, false},
+	}
+	for _, step := range steps {
+		step.change()
+		changed, err := s.load()
+		if err != nil {
+			t.Fatalf("%s: load: %v", step.name, err)
+		}
+		if changed != step.want {
+			t.Errorf("%s: changed = %v, want %v", step.name, changed, step.want)
+		}
 	}
 }
 

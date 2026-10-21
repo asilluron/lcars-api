@@ -12,7 +12,8 @@
 # also be set with the environment variable named next to it, which takes
 # precedence over this file. All values are strings, so keep the quotes.
 
-# Address to listen on. Use "127.0.0.1:8080" to accept local connections only.
+# Address the HTTP server listens on (health check, docs and JSON endpoints).
+# Use "127.0.0.1:8080" to accept local connections only.
 # Env: LCARS_ADDR
 # addr = ":8080"
 
@@ -34,12 +35,28 @@
 # timezone = "America/New_York"
 
 [calendar]
-# Directory of .ics files to serve at GET /calendar. Subdirectories are read
-# too. "~/" means your home directory, and a relative path is relative to
-# this file. Leave unset to disable the calendar.
+# Directory of .ics files to serve on lcars.calendar.get (NATS) and
+# GET /calendar (HTTP). Subdirectories are read too. "~/" means your home
+# directory, and a relative path is relative to this file. Leave unset to
+# disable the calendar.
 # Env: LCARS_CALENDAR_DIR
 # dir = "~/Calendars"
 
 # How often to re-read the directory. Minimum "1s".
 # Env: LCARS_CALENDAR_REFRESH_INTERVAL
 # refresh_interval = "1h"
+
+[nats]
+# The API is served over NATS. By default lcars-api runs its own embedded
+# NATS server, which devices connect to at nats://<this host>:4222. It has no
+# authentication, so keep it on a trusted network.
+#
+# Address the embedded NATS server listens on. Use "127.0.0.1:4222" to accept
+# local connections only. Ignored when url is set.
+# Env: LCARS_NATS_ADDR
+# addr = ":4222"
+
+# Connect to an existing NATS server instead of running the embedded one.
+# Several servers can be listed, separated by commas.
+# Env: LCARS_NATS_URL
+# url = "nats://192.0.2.10:4222"

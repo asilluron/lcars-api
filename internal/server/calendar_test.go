@@ -147,8 +147,8 @@ func TestCalendarDefaults(t *testing.T) {
 		t.Fatalf("status = %d, want 200", code)
 	}
 	today := time.Now().In(mustLoadLocation(t, "America/New_York")).Format(time.DateOnly)
-	if len(got.Days) != defaultCalendarDays {
-		t.Fatalf("got %d days, want %d", len(got.Days), defaultCalendarDays)
+	if len(got.Days) != calendar.DefaultDays {
+		t.Fatalf("got %d days, want %d", len(got.Days), calendar.DefaultDays)
 	}
 	if got.From != today || got.Days[0].Date != today || !got.Days[0].Today {
 		t.Errorf("first day = %+v, want today (%s)", got.Days[0], today)

@@ -12,6 +12,11 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/nats-io/nats.go/micro"
+	"google.golang.org/protobuf/proto"
+
+	lcarsv1 "github.com/asilluron/lcars-api/gen/go/lcars/v1"
 )
 
 // calendarFixtures holds fictional .ics files for the week of 4–10 March
@@ -275,6 +280,22 @@ func TestCalendarToday(t *testing.T) {
 			t.Errorf("%s: today=%v events=%d, want false and 0", d.Date, d.Today, len(d.Events))
 		}
 	}
+
+	// Over NATS, an empty request means the same.
+	viaNATS := natsRequest(t, connectNATS(t, p.natsURL()), subjectCalendarGet, nil)
+	if err := replyError(viaNATS); err != nil {
+		t.Fatal(err)
+	}
+	var pcal lcarsv1.GetCalendarResponse
+	if err := proto.Unmarshal(viaNATS.Data, &pcal); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(renderNATS(&pcal), "\n"), strings.Join(render(cal), "\n"); got != want {
+		t.Errorf("NATS default calendar:\n%s\nHTTP:\n%s", got, want)
+	}
+	if !pcal.GetDays()[0].GetToday() {
+		t.Error("NATS: first day not marked today")
+	}
 }
 
 func TestCalendarDisabled(t *testing.T) {
@@ -288,6 +309,14 @@ func TestCalendarDisabled(t *testing.T) {
 	}
 	if !p.hasLog(map[string]any{"msg": "calendar disabled: calendar.dir is not set"}) {
 		t.Errorf("missing calendar disabled log line\nstdout: %s", p.stdout.String())
+	}
+
+	msg := natsRequest(t, connectNATS(t, p.natsURL()), subjectCalendarGet, &lcarsv1.GetCalendarRequest{})
+	if code := msg.Header.Get(micro.ErrorCodeHeader); code != "503" {
+		t.Errorf("NATS %s = %q, want 503", micro.ErrorCodeHeader, code)
+	}
+	if m := msg.Header.Get(micro.ErrorHeader); !strings.Contains(m, "calendar.dir") {
+		t.Errorf("NATS error = %q, want a hint about calendar.dir", m)
 	}
 }
 

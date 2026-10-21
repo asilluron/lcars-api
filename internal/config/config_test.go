@@ -44,6 +44,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Location == nil {
 		t.Error("Location is nil")
 	}
+	if cfg.NATS.Addr != ":4222" || cfg.NATS.URL != "" {
+		t.Errorf("NATS = %+v, want embedded server on :4222", cfg.NATS)
+	}
 }
 
 func TestLoadEnv(t *testing.T) {
@@ -56,6 +59,8 @@ func TestLoadEnv(t *testing.T) {
 		"LCARS_TIMEZONE":                  "Europe/Berlin",
 		"LCARS_CALENDAR_DIR":              dir,
 		"LCARS_CALENDAR_REFRESH_INTERVAL": "5m",
+		"LCARS_NATS_ADDR":                 "127.0.0.1:4333",
+		"LCARS_NATS_URL":                  "nats://192.0.2.10:4222",
 	}))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -63,7 +68,8 @@ func TestLoadEnv(t *testing.T) {
 	if cfg.Addr != "127.0.0.1:9000" || cfg.LogLevel != slog.LevelDebug ||
 		cfg.LogFormat != "text" || cfg.ShutdownTimeout != 3*time.Second ||
 		cfg.Location.String() != "Europe/Berlin" ||
-		cfg.Calendar.Dir != dir || cfg.Calendar.RefreshInterval != 5*time.Minute {
+		cfg.Calendar.Dir != dir || cfg.Calendar.RefreshInterval != 5*time.Minute ||
+		cfg.NATS.Addr != "127.0.0.1:4333" || cfg.NATS.URL != "nats://192.0.2.10:4222" {
 		t.Errorf("unexpected config: %+v", cfg)
 	}
 }
@@ -77,6 +83,9 @@ timezone = "Asia/Tokyo"
 [calendar]
 dir = "ics"
 refresh_interval = "15m"
+
+[nats]
+addr = "127.0.0.1:4333"
 `)
 	cfg, err := Load(env(map[string]string{"LCARS_CONFIG": path}))
 	if err != nil {
@@ -94,6 +103,9 @@ refresh_interval = "15m"
 	}
 	if cfg.Calendar.RefreshInterval != 15*time.Minute {
 		t.Errorf("RefreshInterval = %v, want 15m", cfg.Calendar.RefreshInterval)
+	}
+	if cfg.NATS.Addr != "127.0.0.1:4333" {
+		t.Errorf("NATS.Addr = %q, want 127.0.0.1:4333", cfg.NATS.Addr)
 	}
 	// Settings not in the file keep their defaults.
 	if cfg.LogFormat != "json" {
@@ -157,6 +169,9 @@ func TestLoadInvalid(t *testing.T) {
 		"bad duration":         {env: map[string]string{"LCARS_SHUTDOWN_TIMEOUT": "soon"}, wantErr: "LCARS_SHUTDOWN_TIMEOUT"},
 		"bad timezone":         {env: map[string]string{"LCARS_TIMEZONE": "Mars/Olympus_Mons"}, wantErr: "LCARS_TIMEZONE"},
 		"refresh too fast":     {env: map[string]string{"LCARS_CALENDAR_REFRESH_INTERVAL": "10ms"}, wantErr: "at least 1s"},
+		"nats addr no port":    {env: map[string]string{"LCARS_NATS_ADDR": "localhost"}, wantErr: "LCARS_NATS_ADDR"},
+		"nats addr bad port":   {env: map[string]string{"LCARS_NATS_ADDR": ":nats"}, wantErr: "invalid port"},
+		"nats addr big port":   {env: map[string]string{"LCARS_NATS_ADDR": ":65536"}, wantErr: "invalid port"},
 		"missing named file":   {env: map[string]string{"LCARS_CONFIG": "/nonexistent/lcars.toml"}, wantErr: "read config file"},
 		"invalid toml":         {file: "addr = ", wantErr: "parse config file"},
 		"unknown key":          {file: "listen = \":80\"", wantErr: `unknown setting "listen"`},

@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata" // so timezone names resolve in minimal containers too
@@ -44,6 +46,16 @@ type Config struct {
 	ShutdownTimeout   time.Duration
 
 	Calendar Calendar
+	NATS     NATS
+}
+
+// NATS configures the NATS connection the API is served on.
+type NATS struct {
+	// URL is an existing NATS server to connect to. If it is "", the server
+	// runs its own embedded NATS server on Addr instead.
+	URL string
+	// Addr is the address the embedded NATS server listens on.
+	Addr string
 }
 
 // Calendar configures the calendar feed.
@@ -103,6 +115,30 @@ var settings = []setting{
 	{"calendar.refresh_interval", "LCARS_CALENDAR_REFRESH_INTERVAL", func(c *Config, v, _ string) error {
 		return parseDuration(&c.Calendar.RefreshInterval, v, time.Second)
 	}},
+	{"nats.addr", "LCARS_NATS_ADDR", func(c *Config, v, _ string) error {
+		_, port, err := net.SplitHostPort(v)
+		if err != nil {
+			return fmt.Errorf("want host:port or :port, got %q", v)
+		}
+		if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+			return fmt.Errorf("invalid port %q", port)
+		}
+		c.NATS.Addr = v
+		return nil
+	}},
+	{"nats.url", "LCARS_NATS_URL", func(c *Config, v, _ string) error {
+		c.NATS.URL = v
+		return nil
+	}},
+}
+
+// EnvVars returns the environment variable of every setting.
+func EnvVars() []string {
+	out := make([]string, len(settings))
+	for i, s := range settings {
+		out[i] = s.env
+	}
+	return out
 }
 
 // Load builds a Config from defaults, then the config file, then getenv.
@@ -122,6 +158,9 @@ func Load(getenv func(string) string) (Config, error) {
 		ShutdownTimeout:   10 * time.Second,
 		Calendar: Calendar{
 			RefreshInterval: time.Hour,
+		},
+		NATS: NATS{
+			Addr: ":4222",
 		},
 	}
 

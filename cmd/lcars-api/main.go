@@ -1,4 +1,5 @@
-// Command lcars-api serves the LCARS home API.
+// Command lcars-api serves the LCARS home API over NATS, with a small HTTP
+// server alongside for health checks, docs and JSON endpoints.
 package main
 
 import (
@@ -13,8 +14,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/asilluron/lcars-api/internal/broker"
 	"github.com/asilluron/lcars-api/internal/calendar"
 	"github.com/asilluron/lcars-api/internal/config"
+	"github.com/asilluron/lcars-api/internal/natsapi"
 	"github.com/asilluron/lcars-api/internal/server"
 )
 
@@ -28,9 +31,9 @@ func main() {
 	}
 }
 
-// run starts the server and blocks until ctx is cancelled and the server has
+// run starts the servers and blocks until ctx is cancelled and they have
 // shut down. Dependencies are passed in so tests can drive it end to end.
-func run(ctx context.Context, getenv func(string) string, stdout io.Writer) error {
+func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err error) {
 	cfg, err := config.Load(getenv)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -42,20 +45,45 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) erro
 		logger.Info("config loaded", "file", cfg.File)
 	}
 
-	var deps server.Deps
+	var cal *calendar.Store
 	if cfg.Calendar.Dir != "" {
-		deps.Calendar = calendar.NewStore(cfg.Calendar.Dir, cfg.Location, logger)
-		if err := deps.Calendar.Load(); err != nil {
+		cal = calendar.NewStore(cfg.Calendar.Dir, cfg.Location, logger)
+		if err := cal.Load(); err != nil {
 			return fmt.Errorf("load calendar: %w", err)
 		}
-		go deps.Calendar.Run(ctx, cfg.Calendar.RefreshInterval)
 	} else {
 		logger.Info("calendar disabled: calendar.dir is not set")
 	}
 
+	bus, err := broker.Start(cfg.NATS, logger)
+	if err != nil {
+		return err
+	}
+	// From here on, shutdown must close the broker: it may run the embedded
+	// NATS server.
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
+		defer cancel()
+		if closeErr := bus.Close(closeCtx); closeErr != nil && err == nil {
+			err = fmt.Errorf("shutdown: %w", closeErr)
+		}
+		if err == nil {
+			logger.Info("server stopped")
+		}
+	}()
+
+	svc, err := natsapi.Start(bus.Conn, logger, server.Version(), natsapi.Deps{Calendar: cal})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = svc.Stop() }()
+	if cal != nil {
+		go cal.Run(ctx, cfg.Calendar.RefreshInterval, natsapi.CalendarChanged(bus.Conn, logger))
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           server.New(logger, deps),
+		Handler:           server.New(logger, server.Deps{Calendar: cal, NATS: bus.Conn}),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
@@ -66,7 +94,7 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) erro
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("server listening", "addr", cfg.Addr, "version", server.Version())
+		logger.Info("http server listening", "addr", cfg.Addr, "version", server.Version())
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -86,8 +114,7 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) erro
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown: %w", err)
 	}
-	logger.Info("server stopped")
-	return nil
+	return nil // the deferred functions stop the NATS service and broker
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {

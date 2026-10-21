@@ -3,16 +3,33 @@ package server
 import (
 	"net/http"
 	"runtime/debug"
+
+	"github.com/nats-io/nats.go"
 )
 
 type healthResponse struct {
 	Status  string `json:"status"`
 	Version string `json:"version"`
+	// NATS is the state of the NATS connection the API is served on:
+	// "connected" or "disconnected". It is omitted if there is none.
+	NATS string `json:"nats,omitempty"`
 }
 
-// healthz reports that the process is up and serving requests.
-func healthz(w http.ResponseWriter, _ *http.Request) error {
-	return writeJSON(w, http.StatusOK, healthResponse{Status: "ok", Version: Version()})
+// healthz reports that the process is up, and, since the API is served over
+// NATS, answers 503 while the NATS connection is down.
+func healthz(nc *nats.Conn) handlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) error {
+		resp := healthResponse{Status: "ok", Version: Version()}
+		if nc == nil {
+			return writeJSON(w, http.StatusOK, resp)
+		}
+		if !nc.IsConnected() {
+			resp.Status, resp.NATS = "unavailable", "disconnected"
+			return writeJSON(w, http.StatusServiceUnavailable, resp)
+		}
+		resp.NATS = "connected"
+		return writeJSON(w, http.StatusOK, resp)
+	}
 }
 
 // version is set at build time for builds without VCS info (e.g. Docker):

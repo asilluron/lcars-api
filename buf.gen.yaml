@@ -1,0 +1,12 @@
+# Code generation for proto/. Run `make proto`; never edit the output by hand.
+# Plugin versions are pinned: the Go plugin must match google.golang.org/protobuf
+# in go.mod, and the prost plugin must match prost in rust/Cargo.toml
+# (neoeinstein-prost v0.5.x generates code for prost 0.14).
+version: v2
+clean: true
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.12
+    out: gen/go
+    opt: paths=source_relative
+  - remote: buf.build/community/neoeinstein-prost:v0.5.0
+    out: rust/src/gen
