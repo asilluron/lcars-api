@@ -47,6 +47,7 @@ type Config struct {
 	ShutdownTimeout   time.Duration
 
 	Calendar Calendar
+	Training Training
 	NATS     NATS
 	Supabase Supabase
 	Eufy     Eufy
@@ -76,6 +77,16 @@ type Supabase struct {
 
 // Enabled reports whether Supabase is configured.
 func (s Supabase) Enabled() bool { return s.URL != "" }
+
+// Training configures where wake-word training audio is stored.
+type Training struct {
+	// Dir is the absolute path of the directory that receives WAV files, or
+	// "" if training capture is disabled.
+	Dir string
+	// MaxBytes is the most the directory may hold. After each write the
+	// oldest hourly files are deleted until the tree is within this size.
+	MaxBytes int64
+}
 
 // NATS configures the NATS connection the API is served on.
 type NATS struct {
@@ -152,6 +163,25 @@ var settings = []setting{
 	}},
 	{"calendar.refresh_interval", "LCARS_CALENDAR_REFRESH_INTERVAL", func(c *Config, v, _ string) error {
 		return parseDuration(&c.Calendar.RefreshInterval, v, time.Second)
+	}},
+	{"training.dir", "LCARS_TRAINING_DIR", func(c *Config, v, base string) error {
+		dir, err := resolvePath(v, base)
+		if err != nil {
+			return err
+		}
+		c.Training.Dir = dir
+		return nil
+	}},
+	{"training.max_bytes", "LCARS_TRAINING_MAX_BYTES", func(c *Config, v, _ string) error {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("want a positive integer number of bytes, got %q", v)
+		}
+		if n < 1 {
+			return fmt.Errorf("must be at least 1, got %d", n)
+		}
+		c.Training.MaxBytes = n
+		return nil
 	}},
 	{"nats.addr", "LCARS_NATS_ADDR", func(c *Config, v, _ string) error {
 		_, port, err := net.SplitHostPort(v)
@@ -260,6 +290,9 @@ func Load(getenv func(string) string) (Config, error) {
 		ShutdownTimeout:   10 * time.Second,
 		Calendar: Calendar{
 			RefreshInterval: time.Hour,
+		},
+		Training: Training{
+			MaxBytes: 32 << 30, // 32 GiB, about a week and a half of 16 kHz mono
 		},
 		NATS: NATS{
 			Addr: ":4222",

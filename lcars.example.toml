@@ -46,6 +46,21 @@
 # Env: LCARS_CALENDAR_REFRESH_INTERVAL
 # refresh_interval = "1h"
 
+[training]
+# Directory of hourly WAV files written by lcars.training.put. A device with
+# its training flag on streams every captured sample here, as 16 kHz mono
+# PCM. Leave unset to disable the endpoint (requests then get 503). "~/"
+# means your home directory, and a relative path is relative to this file.
+# The server will not start if this directory is missing.
+# Env: LCARS_TRAINING_DIR
+# dir = "/srv/lcars/training"
+
+# Delete the oldest hourly files once the directory grows past this many
+# bytes, so a flag left on cannot fill the disk. A week of audio is about
+# 19 GB. The default is 32 GiB.
+# Env: LCARS_TRAINING_MAX_BYTES
+# max_bytes = "34359738368"
+
 [nats]
 # The API is served over NATS. By default lcars-api runs its own embedded
 # NATS server, which devices connect to at nats://<this host>:4222. Devices
