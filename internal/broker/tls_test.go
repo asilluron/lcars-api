@@ -60,7 +60,7 @@ func TestEmbeddedTLS(t *testing.T) {
 		Addr:     "127.0.0.1:0",
 		TLSDir:   dir,
 		TLSHosts: []string{"127.0.0.1"},
-	}, discard)
+	}, nil, discard)
 	if err != nil {
 		t.Fatal(err)
 	}
