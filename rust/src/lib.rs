@@ -25,7 +25,8 @@
 //! assert_eq!(GetCalendarRequest::decode(body.as_slice()).unwrap(), req);
 //! ```
 //!
-//! See `examples/agenda.rs` for a complete client using `async-nats`.
+//! See `examples/agenda.rs` for a calendar client, and `examples/cameras.rs`
+//! for listing cameras and opening the HTTP still and live stream.
 //!
 //! [lcars-api]: https://github.com/asilluron/lcars-api
 
