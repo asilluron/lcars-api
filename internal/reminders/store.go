@@ -90,8 +90,9 @@ type DB interface {
 type Store struct {
 	db DB
 
-	mu       sync.Mutex
-	onChange func(time.Time)
+	mu         sync.Mutex
+	onChange   func(time.Time)
+	lastChange time.Time
 }
 
 // Supabase adapts a Supabase client to DB.
@@ -109,7 +110,8 @@ func (s *Store) SetOnChange(fn func(time.Time)) {
 }
 
 // List returns the reminders, oldest first, and when the list last changed.
-// An empty list has the zero time.
+// An empty list has the zero time (unless the list was cleared during this
+// session, in which case the time of that deletion is returned).
 func (s *Store) List(ctx context.Context) ([]Reminder, time.Time, error) {
 	items, err := s.db.ListReminders(ctx)
 	if err != nil {
@@ -117,7 +119,14 @@ func (s *Store) List(ctx context.Context) ([]Reminder, time.Time, error) {
 	}
 	items = slices.Clone(items)
 	slices.SortFunc(items, compareReminders)
-	return items, latest(items), nil
+
+	s.mu.Lock()
+	at := s.lastChange
+	s.mu.Unlock()
+	if itemLatest := latest(items); itemLatest.After(at) {
+		at = itemLatest
+	}
+	return items, at, nil
 }
 
 // Create appends a reminder. An empty accent is purple. The new reminder
@@ -138,6 +147,9 @@ func (s *Store) Create(ctx context.Context, title, detail, accent string) (Remin
 
 	s.mu.Lock()
 	item, at, notify, err := s.create(ctx, title, detail, accent)
+	if err == nil && at.After(s.lastChange) {
+		s.lastChange = at
+	}
 	fn := s.onChange
 	s.mu.Unlock()
 	if err != nil {
@@ -158,6 +170,9 @@ func (s *Store) SetDone(ctx context.Context, id string, done bool) error {
 	}
 	s.mu.Lock()
 	at, notify, err := s.setDone(ctx, id, done)
+	if err == nil && at.After(s.lastChange) {
+		s.lastChange = at
+	}
 	fn := s.onChange
 	s.mu.Unlock()
 	if err != nil {
@@ -176,6 +191,9 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	}
 	s.mu.Lock()
 	at, err := s.delete(ctx, id)
+	if err == nil && at.After(s.lastChange) {
+		s.lastChange = at
+	}
 	fn := s.onChange
 	s.mu.Unlock()
 	if err != nil {
@@ -239,10 +257,6 @@ func (s *Store) delete(ctx context.Context, id string) (time.Time, error) {
 	}
 	if err := s.db.DeleteReminder(ctx, id); err != nil {
 		return time.Time{}, err
-	}
-	left := slices.DeleteFunc(items, func(r Reminder) bool { return r.ID == id })
-	if at := latest(left); !at.IsZero() {
-		return at, nil
 	}
 	return time.Now().UTC(), nil
 }
