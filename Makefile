@@ -9,6 +9,9 @@ RUST    := rust:1.99.0-slim
 # A bare-metal target, to check the Rust crate builds without std.
 NO_STD_TARGET := thumbv7em-none-eabihf
 
+# Same Node as eufy/Dockerfile. @mega-yfue/eufy-sdk requires Node >= 24.5.
+NODE    := node:24.22.1-slim
+
 DOCKER_BUF = docker run --rm -v "$(CURDIR):/workspace" -w /workspace $(BUF)
 # Cargo in Docker, with the toolchain components, crate downloads and build
 # output cached in named volumes.
@@ -39,6 +42,15 @@ test: ## Run tests with the race detector
 .PHONY: e2e
 e2e: ## Run end-to-end tests: binary, Docker image, Rust client
 	go test -tags e2e -count=1 -v ./e2e/...
+
+# npm for the Eufy proxy. node_modules stays in a volume.
+DOCKER_EUFY = docker run --rm -v "$(CURDIR)/eufy:/src/eufy" \
+	-v lcars-eufy-node-modules:/src/eufy/node_modules -v lcars-npm-cache:/root/.npm \
+	-w /src/eufy $(NODE)
+
+.PHONY: eufy
+eufy: ## Type-check and test the Eufy camera proxy (needs Docker)
+	$(DOCKER_EUFY) sh -c 'npm ci --no-audit --no-fund && npm run typecheck && npm test'
 
 .PHONY: cover
 cover: ## Run tests and open an HTML coverage report
@@ -86,7 +98,7 @@ tidy: ## Tidy and verify go.mod
 	go mod verify
 
 .PHONY: check
-check: tidy fmt lint api-lint proto test rust vuln e2e ## Run everything CI runs
+check: tidy fmt lint api-lint proto test rust eufy vuln e2e ## Run everything CI runs
 
 .PHONY: docker
 docker: ## Build the container image

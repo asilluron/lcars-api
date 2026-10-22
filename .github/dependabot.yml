@@ -16,3 +16,10 @@ updates:
     directory: /rust
     schedule:
       interval: weekly
+  - package-ecosystem: npm
+    directory: /eufy
+    schedule:
+      interval: weekly
+    groups:
+      eufy:
+        patterns: ["*"]

@@ -37,6 +37,14 @@ nats --server nats://localhost:4222 micro info lcars
 nats --server nats://localhost:4222 request lcars.calendar.get ''   # protobuf reply
 ```
 
+## Cameras
+
+[`eufy/`](eufy/) is a separate process that logs into an Eufy account and
+serves live camera video and stored snapshots over HTTP on this machine. It
+is not part of the lcars-api server. The account email and password are read
+from [`eufy/.env`](eufy/.env.example), which is gitignored. See
+[`eufy/README.md`](eufy/README.md). `make eufy` type-checks and tests it.
+
 ## NATS API
 
 Devices connect to `nats://<server>:4222`. Every message body is a protobuf
@@ -228,6 +236,7 @@ internal/calendar/     reads .ics files, expands recurring events, groups them b
 internal/config/       config file and environment variables
 internal/server/       HTTP routes, handlers, middleware
 internal/server/api/   OpenAPI document and Redoc docs page (embedded)
+eufy/                  Eufy camera proxy: Node process using @mega-yfue/eufy-sdk
 e2e/                   black-box tests: binary, Docker image, Rust client
 ```
 
@@ -256,6 +265,7 @@ documented but not registered, and `make api-lint` validates the document.
 make test      # unit tests with the race detector
 make e2e       # end-to-end tests: binary, Docker image, Rust client
 make rust      # Rust crate: fmt, clippy, tests, no_std build (via Docker)
+make eufy      # type-check and test the Eufy camera proxy (via Docker)
 make api-lint  # validate the OpenAPI document (Redocly CLI, via Docker)
 make check     # everything CI runs
 ```
@@ -297,13 +307,13 @@ named Docker volumes (`lcars-cargo-*`), shared with `make rust`.
 
 ## Tooling
 
-- **Dependencies:** kept minimal. Beyond the standard library: [nats-server](https://github.com/nats-io/nats-server) (embedded) and [nats.go](https://github.com/nats-io/nats.go) for NATS, [protobuf-go](https://github.com/protocolbuffers/protobuf-go) for messages, [BurntSushi/toml](https://github.com/BurntSushi/toml) for the config file, and [emersion/go-ical](https://github.com/emersion/go-ical) with [teambition/rrule-go](https://github.com/teambition/rrule-go) for parsing `.ics` files and expanding recurring events. The Rust crate depends only on [prost](https://github.com/tokio-rs/prost).
+- **Dependencies:** kept minimal. Beyond the standard library: [nats-server](https://github.com/nats-io/nats-server) (embedded) and [nats.go](https://github.com/nats-io/nats.go) for NATS, [protobuf-go](https://github.com/protocolbuffers/protobuf-go) for messages, [BurntSushi/toml](https://github.com/BurntSushi/toml) for the config file, and [emersion/go-ical](https://github.com/emersion/go-ical) with [teambition/rrule-go](https://github.com/teambition/rrule-go) for parsing `.ics` files and expanding recurring events. The Rust crate depends only on [prost](https://github.com/tokio-rs/prost). The Eufy camera proxy in `eufy/` is a separate Node process. It reads the account from a gitignored `.env` file, and its tests run in the Node image.
 - **Protobuf:** [Buf](https://buf.build) (`buf.yaml`, `buf.gen.yaml`), run in Docker, lints `proto/` and generates Go (protoc-gen-go) and Rust (prost) code with pinned plugin versions.
 - **Lint and format:** [golangci-lint](https://golangci-lint.run) v2 (`.golangci.yml`), with gofumpt and goimports.
 - **API docs:** OpenAPI 3.1, linted with [Redocly CLI](https://redocly.com/docs/cli) (`redocly.yaml`) and rendered with Redoc at `/docs`.
 - **Vulnerability scan:** `govulncheck`, pinned in `go.mod` as a tool and run with `go tool govulncheck`.
 - **Container image:** multi-stage `Dockerfile` that produces a static binary on distroless `nonroot`.
-- **CI:** GitHub Actions runs tests (with `-race`), lint, OpenAPI and protobuf lint, a check that generated code is current, the Rust crate checks, govulncheck and the e2e suite, including the Docker image and the Rust client. Dependabot keeps Go modules, Rust crates, Actions and base images up to date.
+- **CI:** GitHub Actions runs tests (with `-race`), lint, OpenAPI and protobuf lint, a check that generated code is current, the Rust crate checks, the Eufy proxy tests, govulncheck and the e2e suite, including the Docker image and the Rust client. Dependabot keeps Go modules, Rust crates, Actions and base images up to date.
 
 ## Contributing
 

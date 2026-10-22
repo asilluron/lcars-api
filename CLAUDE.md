@@ -140,13 +140,21 @@ Unit tests are welcome in addition, never instead.
 - New behavior gets unit tests and e2e tests; see "End-to-end tests are
   required" above.
 
+### Cameras
+
+- The Eufy proxy is a separate Node process in `eufy/`. It is not part of the
+  Go server, NATS, or the distroless image. `make eufy` type-checks and tests
+  it without an Eufy account. Account credentials live in `eufy/.env` (see
+  `eufy/.env.example`); that file and the session stay out of git.
+
 ## Commands
 
 ```sh
-make check     # everything CI runs: tidy, fmt, lint, api-lint, proto, test, rust, vuln, e2e
+make check     # everything CI runs: tidy, fmt, lint, api-lint, proto, test, rust, eufy, vuln, e2e
 make test      # unit tests with -race
 make e2e       # end-to-end tests (binary, Docker image, Rust client)
 make proto     # lint proto/ and regenerate Go and Rust code (Docker)
 make rust      # Rust crate: fmt, clippy, tests, no_std build (Docker)
+make eufy      # type-check and test the Eufy camera proxy (Docker)
 make run       # run locally with text logs; reads ./lcars.toml if present
 ```

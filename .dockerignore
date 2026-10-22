@@ -8,3 +8,6 @@ Dockerfile
 .dockerignore
 lcars.toml
 rust
+# The camera proxy is its own image (eufy/Dockerfile). Keep its source, and
+# any session file, out of the lcars-api image.
+eufy
