@@ -8,6 +8,7 @@
 //! | [`subjects::CALENDAR_GET`]             | request/reply | [`v1::GetCalendarRequest`] → [`v1::GetCalendarResponse`] |
 //! | [`subjects::CALENDAR_UPDATED`]         | event         | [`v1::CalendarUpdated`]                              |
 //! | [`subjects::CAMERAS_LIST`]             | request/reply | [`v1::ListCamerasRequest`] → [`v1::ListCamerasResponse`] |
+//! | [`subjects::TRAINING_PUT`]             | request/reply | [`v1::PutTrainingAudioRequest`] → [`v1::PutTrainingAudioResponse`] |
 //!
 //! A failed request gets a reply with an empty body and two headers:
 //! [`headers::ERROR_CODE`] (an HTTP-style status such as `"400"`) and
@@ -25,8 +26,9 @@
 //! assert_eq!(GetCalendarRequest::decode(body.as_slice()).unwrap(), req);
 //! ```
 //!
-//! See `examples/agenda.rs` for a calendar client, and `examples/cameras.rs`
-//! for listing cameras and opening the HTTP still and live stream.
+//! See `examples/agenda.rs` for a calendar client, `examples/cameras.rs`
+//! for listing cameras and opening the HTTP still and live stream, and
+//! `examples/training.rs` for sending a chunk of training audio.
 //!
 //! [lcars-api]: https://github.com/asilluron/lcars-api
 
@@ -59,6 +61,10 @@ pub mod subjects {
     /// this server. Video is not sent on NATS. Close the stream response
     /// to stop that viewer.
     pub const CAMERAS_LIST: &str = "lcars.cameras.list";
+    /// Send a [`PutTrainingAudioRequest`](crate::v1::PutTrainingAudioRequest);
+    /// the reply is a [`PutTrainingAudioResponse`](crate::v1::PutTrainingAudioResponse).
+    /// The server stores the PCM under a name it chooses.
+    pub const TRAINING_PUT: &str = "lcars.training.put";
 }
 
 /// Headers on error replies (the NATS service API convention).

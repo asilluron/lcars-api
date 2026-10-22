@@ -41,6 +41,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Calendar.Dir != "" || cfg.Calendar.RefreshInterval != time.Hour {
 		t.Errorf("Calendar = %+v, want disabled with 1h refresh", cfg.Calendar)
 	}
+	if cfg.Training.Dir != "" || cfg.Training.MaxBytes != 32<<30 {
+		t.Errorf("Training = %+v, want disabled with a 32 GiB cap", cfg.Training)
+	}
 	if cfg.Location == nil {
 		t.Error("Location is nil")
 	}
@@ -62,6 +65,8 @@ func TestLoadEnv(t *testing.T) {
 		"LCARS_TIMEZONE":                  "Europe/Berlin",
 		"LCARS_CALENDAR_DIR":              dir,
 		"LCARS_CALENDAR_REFRESH_INTERVAL": "5m",
+		"LCARS_TRAINING_DIR":              dir,
+		"LCARS_TRAINING_MAX_BYTES":        "1048576",
 		"LCARS_NATS_ADDR":                 "127.0.0.1:4333",
 		"LCARS_NATS_URL":                  "nats://192.0.2.10:4222",
 		"LCARS_SUPABASE_URL":              "http://192.0.2.10:54321/",
@@ -77,7 +82,8 @@ func TestLoadEnv(t *testing.T) {
 		cfg.Calendar.Dir != dir || cfg.Calendar.RefreshInterval != 5*time.Minute ||
 		cfg.NATS.Addr != "127.0.0.1:4333" || cfg.NATS.URL != "nats://192.0.2.10:4222" ||
 		cfg.Supabase.URL != "http://192.0.2.10:54321" || cfg.Supabase.SecretKey != "example-secret-key" ||
-		cfg.Supabase.RefreshInterval != 30*time.Second || !cfg.Supabase.Enabled() {
+		cfg.Supabase.RefreshInterval != 30*time.Second || !cfg.Supabase.Enabled() ||
+		cfg.Training.Dir != dir || cfg.Training.MaxBytes != 1048576 {
 		t.Errorf("unexpected config: %+v", cfg)
 	}
 }
@@ -91,6 +97,10 @@ timezone = "Asia/Tokyo"
 [calendar]
 dir = "ics"
 refresh_interval = "15m"
+
+[training]
+dir = "audio"
+max_bytes = "2048"
 
 [nats]
 addr = "127.0.0.1:4333"
@@ -111,6 +121,9 @@ addr = "127.0.0.1:4333"
 	}
 	if cfg.Calendar.RefreshInterval != 15*time.Minute {
 		t.Errorf("RefreshInterval = %v, want 15m", cfg.Calendar.RefreshInterval)
+	}
+	if want := filepath.Join(filepath.Dir(path), "audio"); cfg.Training.Dir != want || cfg.Training.MaxBytes != 2048 {
+		t.Errorf("Training = %+v, want dir %q and max 2048", cfg.Training, want)
 	}
 	if cfg.NATS.Addr != "127.0.0.1:4333" {
 		t.Errorf("NATS.Addr = %q, want 127.0.0.1:4333", cfg.NATS.Addr)

@@ -35,6 +35,15 @@ func TestRustClient(t *testing.T) {
 	// directory must be readable by the image's nonroot user.
 	dir := filepath.Join(t.TempDir(), "calendars")
 	copyDir(t, fixturesDir(t), dir)
+	// The image runs as nonroot, so the training directory has to be writable
+	// by anyone. It is a temp dir created for this test.
+	trainingDir := filepath.Join(t.TempDir(), "training")
+	if err := os.MkdirAll(trainingDir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(trainingDir, 0o777); err != nil {
+		t.Fatal(err)
+	}
 
 	// The secret key goes in the config file, as it would in production.
 	config := writeConfigFile(t, "[supabase]\nurl = \""+supabaseKongURL+"\"\nsecret_key = \""+sb.SecretKey+"\"\n")
@@ -43,9 +52,11 @@ func TestRustClient(t *testing.T) {
 		"-p", "127.0.0.1::8080",
 		"-v", dir+":/calendars:ro",
 		"-v", config+":/config/lcars.toml:ro",
+		"-v", trainingDir+":/training",
 		"-e", "LCARS_CALENDAR_DIR=/calendars",
 		"-e", "LCARS_CALENDAR_REFRESH_INTERVAL=1s",
 		"-e", "LCARS_TIMEZONE=America/New_York",
+		"-e", "LCARS_TRAINING_DIR=/training",
 		image))
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", server).Run() })
 	base := "http://" + dockerPort(t, server, "8080/tcp")
@@ -80,10 +91,13 @@ func TestRustClient(t *testing.T) {
 	}
 
 	t.Log("building the Rust example client (the first build may take a few minutes)")
-	if out, err := run(15*time.Minute, "cargo", "build", "--locked", "--example", "agenda"); err != nil {
+	if out, err := run(15*time.Minute, "cargo", "build", "--locked", "--examples"); err != nil {
 		t.Fatalf("cargo build: %v\n%s", err, out)
 	}
-	const agenda = "/target/debug/examples/agenda"
+	const (
+		agenda   = "/target/debug/examples/agenda"
+		training = "/target/debug/examples/training"
+	)
 	url := "nats://" + alias + ":4222"
 
 	t.Run("calendar", func(t *testing.T) {
@@ -93,6 +107,16 @@ func TestRustClient(t *testing.T) {
 		}
 		if got := strings.TrimSpace(out); got != strings.Join(fixtureWeek, "\n") {
 			t.Errorf("Rust client output:\n%s\nwant:\n%s", got, strings.Join(fixtureWeek, "\n"))
+		}
+	})
+
+	t.Run("training", func(t *testing.T) {
+		out, err := run(time.Minute, training, url)
+		if err != nil {
+			t.Fatalf("training: %v\n%s", err, out)
+		}
+		if strings.TrimSpace(out) != "accepted 6" {
+			t.Errorf("Rust client output = %q, want %q", out, "accepted 6")
 		}
 	})
 

@@ -99,7 +99,7 @@ func TestCameras(t *testing.T) {
 	before := hits.Load()
 	badSerial := mustDo(t, http.MethodGet, p.url("/cameras/CAM-1/stream"))
 	if badSerial.StatusCode != http.StatusBadRequest || hits.Load() != before {
-		t.Errorf("bad serial = %d (proxy hits %d -> %d), want 400 and no proxy call", badSerial.StatusCode, before, hits)
+		t.Errorf("bad serial = %d (proxy hits %d -> %d), want 400 and no proxy call", badSerial.StatusCode, before, hits.Load())
 	}
 	missing := mustDo(t, http.MethodGet, p.url("/cameras/OTHER/snapshot"))
 	if missing.StatusCode != http.StatusNotFound {

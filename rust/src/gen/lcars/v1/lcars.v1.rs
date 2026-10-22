@@ -142,4 +142,32 @@ pub struct Camera {
     #[prost(string, tag="5")]
     pub snapshot_path: ::prost::alloc::string::String,
 }
+/// PutTrainingAudioRequest is one chunk of microphone audio. Send it as a
+/// request on the subject "lcars.training.put"; the reply is a
+/// PutTrainingAudioResponse.
+///
+/// pcm is 16-bit signed little-endian mono at 16 kHz, and must be non-empty,
+/// an even number of bytes, and at most 256 KiB. screen_id is a label only.
+/// The server chooses the file name and ignores any path characters in it.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid request, 503 if training is
+/// not configured, 500 otherwise) and "Nats-Service-Error" (a message).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PutTrainingAudioRequest {
+    /// Device label, such as "kitchen". Characters outside \[A-Za-z0-9_-\], and
+    /// values longer than 32 characters, are stored under the label "device".
+    #[prost(string, tag="1")]
+    pub screen_id: ::prost::alloc::string::String,
+    /// 16 kHz mono 16-bit PCM, little-endian. Not a WAV file.
+    #[prost(bytes="vec", tag="2")]
+    pub pcm: ::prost::alloc::vec::Vec<u8>,
+}
+/// PutTrainingAudioResponse reports how many pcm bytes were written.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PutTrainingAudioResponse {
+    /// Bytes of pcm appended to the hourly WAV file.
+    #[prost(uint32, tag="1")]
+    pub accepted_bytes: u32,
+}
 // @@protoc_insertion_point(module)
