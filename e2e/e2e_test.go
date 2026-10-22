@@ -22,9 +22,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -50,6 +52,12 @@ func runMain(m *testing.M) int {
 		return 1
 	}
 	defer os.RemoveAll(dir)
+
+	// The admin page is embedded in the binary, so it must be built first.
+	if _, err := os.Stat("../internal/adminui/dist/index.html"); err != nil {
+		fmt.Fprintln(os.Stderr, "e2e: the admin page is not built: run `make admin-ui` (or `make e2e`)")
+		return 1
+	}
 
 	binPath = filepath.Join(dir, "lcars-api")
 	build := exec.Command("go", "build", "-trimpath",
@@ -112,6 +120,14 @@ func TestRouting(t *testing.T) {
 		{http.MethodHead, "/docs", http.StatusOK, ""},
 		{http.MethodPut, "/docs", http.StatusMethodNotAllowed, "GET, HEAD"},
 		{http.MethodGet, "/docs/", http.StatusNotFound, ""},
+		{http.MethodGet, "/admin", http.StatusOK, ""}, // redirected to /admin/
+		{http.MethodGet, "/admin/", http.StatusOK, ""},
+		{http.MethodPost, "/admin/", http.StatusMethodNotAllowed, "GET, HEAD"},
+		{http.MethodGet, "/admin/assets/", http.StatusNotFound, ""},
+		{http.MethodGet, "/admin/no-such-file.js", http.StatusNotFound, ""},
+		{http.MethodGet, "/admin/api/session", http.StatusNotFound, ""},
+		{http.MethodPut, "/admin/api/tokens", http.StatusMethodNotAllowed, ""},
+		{http.MethodGet, "/admin/api/tokens/dev_000000000000", http.StatusNotFound, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
@@ -127,8 +143,23 @@ func TestRouting(t *testing.T) {
 }
 
 func TestAPIDocs(t *testing.T) {
-	// Configure the calendar so every documented path can answer 200.
-	p := startServer(t, "LCARS_CALENDAR_DIR="+fixturesDir(t))
+	// Configure the calendar and a camera proxy so every documented path can
+	// answer 200. The proxy is a stand-in; it never talks to Eufy.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cameras":
+			_, _ = io.WriteString(w, `[{"sn":"CAM1","name":"Front door","camera":true}]`)
+		case "/stream/CAM1":
+			_, _ = io.WriteString(w, "x")
+		case "/snapshot/CAM1":
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write([]byte{0xff, 0xd8, 0xff, 0xd9})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(upstream.Close)
+	p := startServer(t, "LCARS_CALENDAR_DIR="+fixturesDir(t), "LCARS_EUFY_URL="+upstream.URL)
 
 	resp := mustDo(t, http.MethodGet, p.url("/openapi.json"))
 	if resp.StatusCode != http.StatusOK {
@@ -139,7 +170,9 @@ func TestAPIDocs(t *testing.T) {
 		Info    struct {
 			Version string `json:"version"`
 		} `json:"info"`
-		Paths map[string]any `json:"paths"`
+		Paths map[string]map[string]struct {
+			Security []map[string]any `json:"security"`
+		} `json:"paths"`
 	}
 	if err := json.Unmarshal(resp.body, &spec); err != nil {
 		t.Fatalf("decode spec: %v", err)
@@ -150,9 +183,17 @@ func TestAPIDocs(t *testing.T) {
 	if spec.Info.Version != testVersion {
 		t.Errorf("info.version = %q, want %q", spec.Info.Version, testVersion)
 	}
-	// Every documented path must be served.
-	for path := range spec.Paths {
-		if r := mustDo(t, http.MethodGet, p.url(path)); r.StatusCode != http.StatusOK {
+	// Every documented GET that needs no credentials (with authentication
+	// off, as here) must be served.
+	for path, ops := range spec.Paths {
+		get, ok := ops["get"]
+		if !ok || (len(get.Security) > 0 && !slices.ContainsFunc(get.Security, func(s map[string]any) bool { return len(s) == 0 })) {
+			continue
+		}
+		// Path templates are requested with a stand-in serial. The OpenAPI
+		// path itself is not a serial the proxy would accept.
+		reqPath := strings.ReplaceAll(path, "{sn}", "CAM1")
+		if r := mustDo(t, http.MethodGet, p.url(reqPath)); r.StatusCode != http.StatusOK {
 			t.Errorf("GET %s (documented) status = %d, want 200", path, r.StatusCode)
 		}
 	}
@@ -284,6 +325,12 @@ func TestInvalidConfigExits(t *testing.T) {
 		"nats unreachable": {"LCARS_NATS_URL=nats://" + freeAddr(t), "connect to NATS"},
 		"missing config":   {"LCARS_CONFIG=" + filepath.Join(t.TempDir(), "lcars.toml"), "read config file"},
 		"unknown key":      {"LCARS_CONFIG=" + badFile, `unknown setting "calendar.directory"`},
+		"supabase url":     {"LCARS_SUPABASE_URL=127.0.0.1:54321", "LCARS_SUPABASE_URL"},
+		"supabase no key":  {"LCARS_SUPABASE_URL=http://127.0.0.1:54321", "must be set together"},
+		"supabase refresh": {"LCARS_SUPABASE_REFRESH_INTERVAL=1ms", "LCARS_SUPABASE_REFRESH_INTERVAL"},
+		"eufy url":         {"LCARS_EUFY_URL=not-a-url", "LCARS_EUFY_URL"},
+		"eufy path":        {"LCARS_EUFY_URL=http://127.0.0.1:3000/cameras", "LCARS_EUFY_URL"},
+		"eufy userinfo":    {"LCARS_EUFY_URL=http://user:replace-me@127.0.0.1:3000", "LCARS_EUFY_URL"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -385,9 +432,9 @@ func TestDockerImage(t *testing.T) {
 	checkFixtureWeek(t, base)
 	checkFixtureWeekNATS(t, "nats://"+dockerPort(t, id, "4222/tcp"))
 
-	// The spec and docs page are embedded in the binary, so they must be
-	// served from the image without any files next to it.
-	for _, path := range []string{"/openapi.json", "/docs"} {
+	// The spec, docs and admin pages are embedded in the binary, so they must
+	// be served from the image without any files next to it.
+	for _, path := range []string{"/openapi.json", "/docs", "/admin/"} {
 		if r := mustDo(t, http.MethodGet, base+path); r.StatusCode != http.StatusOK {
 			t.Errorf("GET %s = %d, want 200", path, r.StatusCode)
 		}
@@ -589,6 +636,11 @@ func do(method, url string) (*response, error) {
 	if err != nil {
 		return nil, err
 	}
+	return send(req)
+}
+
+// send is do for a prepared request, such as one with a body or headers.
+func send(req *http.Request) (*response, error) {
 	cover(pathCoverage, req.URL.Path)
 	resp, err := client.Do(req)
 	if err != nil {

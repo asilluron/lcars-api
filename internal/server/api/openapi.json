@@ -4,7 +4,7 @@
     "title": "LCARS API",
     "version": "{{VERSION}}",
     "summary": "LCARS for home: the HTTP side of the LCARS home display API.",
-    "description": "The LCARS home display API is served primarily over **NATS**, with protobuf message bodies. This reference covers the HTTP server that runs alongside it: a health check, these docs, and JSON versions of the NATS endpoints for debugging and simple clients.\n\n## NATS API\n\nDevices connect to the NATS server lcars-api runs (port `4222` by default) or to the one it is configured to use. Message bodies are protobuf messages defined in [`proto/lcars/v1`](https://github.com/asilluron/lcars-api/tree/main/proto/lcars/v1); generated Rust (prost) types are in the `lcars-proto` crate in [`rust/`](https://github.com/asilluron/lcars-api/tree/main/rust).\n\n| Subject | Kind | Messages | HTTP equivalent |\n|---------|------|----------|-----------------|\n| `lcars.calendar.get` | request/reply | `GetCalendarRequest` → `GetCalendarResponse` | [`GET /calendar`](#operation/getCalendar) |\n| `lcars.calendar.updated` | event | `CalendarUpdated`, published when the `.ics` files change | none |\n\nNATS error replies have an empty body and the headers `Nats-Service-Error-Code` (the same status code the HTTP endpoint would return) and `Nats-Service-Error` (the message). The service is named `lcars`, so it also answers `$SRV.PING.lcars`, `$SRV.INFO.lcars` and `$SRV.STATS.lcars`.\n\nThis reference is generated from the OpenAPI document the server itself serves at [`/openapi.json`](/openapi.json), and the version shown above is the version of the running build.\n\n## Conventions\n\n- **Encoding.** Request and response bodies are JSON (`Content-Type: application/json`) unless an operation says otherwise.\n- **`HEAD`.** Every `GET` operation also answers `HEAD`, with the same status and headers and no body.\n- **Authentication.** None, over HTTP or NATS. The API is meant to run on a trusted home network; put it behind a reverse proxy if you need authentication or TLS.\n- **Dates and times.** Dates are `YYYY-MM-DD`. Timestamps are [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) with the UTC offset of the server's timezone, e.g. `2026-10-20T09:00:00-04:00`.\n- **Versioning.** Paths are not versioned yet. The build version is reported by [`GET /healthz`](#operation/getHealth).\n\n## Errors\n\nErrors raised by an operation have a JSON body with a single `error` field:\n\n```json\n{\"error\": \"Internal Server Error\"}\n```\n\nUnexpected failures, including panics, are logged on the server and returned as a `500` with a generic message, so internal details never reach the client.\n\nRouting errors come from the router before any operation runs, and have a **plain-text** body:\n\n| Status | When | Body |\n|--------|------|------|\n| `404` | No route matches the path. | `404 page not found` |\n| `405` | The path exists, but not for this method. The `Allow` header lists the methods that are, e.g. `Allow: GET, HEAD`. | `Method Not Allowed` |\n\n## Timeouts\n\nThe server closes connections that are slow to send headers (5 s) or a request (15 s), and responses that take longer than 15 s to write. Idle keep-alive connections are closed after 60 s. On `SIGTERM` or `SIGINT` it stops accepting new connections and waits for in-flight requests to finish before exiting.",
+    "description": "The LCARS home display API is served primarily over **NATS**, with protobuf message bodies. This reference covers the HTTP server that runs alongside it: a health check, these docs, and JSON versions of the NATS endpoints for debugging and simple clients.\n\n## NATS API\n\nDevices connect to the NATS server lcars-api runs (port `4222` by default) or to the one it is configured to use. Message bodies are protobuf messages defined in [`proto/lcars/v1`](https://github.com/asilluron/lcars-api/tree/main/proto/lcars/v1); generated Rust (prost) types are in the `lcars-proto` crate in [`rust/`](https://github.com/asilluron/lcars-api/tree/main/rust).\n\n| Subject | Kind | Messages | HTTP equivalent |\n|---------|------|----------|-----------------|\n| `lcars.calendar.get` | request/reply | `GetCalendarRequest` → `GetCalendarResponse` | [`GET /calendar`](#operation/getCalendar) |\n| `lcars.calendar.updated` | event | `CalendarUpdated`, published when the `.ics` files change | none |\n| `lcars.cameras.list` | request/reply | `ListCamerasRequest` → `ListCamerasResponse` | [`GET /cameras`](#operation/listCameras) |\n\nNATS error replies have an empty body and the headers `Nats-Service-Error-Code` (the same status code the HTTP endpoint would return) and `Nats-Service-Error` (the message). The service is named `lcars`, so it also answers `$SRV.PING.lcars`, `$SRV.INFO.lcars` and `$SRV.STATS.lcars`.\n\nThis reference is generated from the OpenAPI document the server itself serves at [`/openapi.json`](/openapi.json), and the version shown above is the version of the running build.\n\n## Conventions\n\n- **Encoding.** Request and response bodies are JSON (`Content-Type: application/json`) unless an operation says otherwise.\n- **`HEAD`.** Every `GET` operation also answers `HEAD`, with the same status and headers and no body.\n- **Authentication.** See [Authentication](#section/Authentication) below.\n- **Dates and times.** Dates are `YYYY-MM-DD`. Timestamps are [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) with the UTC offset of the server's timezone, e.g. `2026-10-20T09:00:00-04:00`.\n- **Versioning.** Paths are not versioned yet. The build version is reported by [`GET /healthz`](#operation/getHealth).\n\n## Authentication\n\nAuthentication is on when the server is configured with a Supabase project (`supabase.url` and `supabase.secret_key`), and off otherwise, in which case anyone who can reach the server can use the API.\n\nWhen it is on:\n\n- **Devices** use a *device token*, made on the [admin page](/admin/): a username such as `dev_7f3k2m9q4x8w` and a secret password. Over HTTP, send them as [Basic auth](https://www.rfc-editor.org/rfc/rfc7617) on the device endpoints (marked *deviceToken* below). Over NATS, connect to the embedded server with them as the user and password, e.g. `nats://dev_7f3k2m9q4x8w:<secret>@<host>:4222`; devices may then only send requests to the API's request subjects and subscribe to its event subjects. Revoking a token takes effect immediately and closes the NATS connections using it. (Tokens are not checked when lcars-api connects to an external NATS server with `nats.url`; secure that server separately.)\n- **Admins** sign in on the admin page with an email and password. Admin accounts are Supabase Auth users, created by the operator (sign-ups are disabled). The admin API takes the access token from [`POST /admin/api/session`](#operation/createAdminSession) as a Bearer token.\n- `/healthz`, `/openapi.json`, `/docs` and the admin page itself are always open.\n\nThere is no TLS: use the API only on a trusted network, or put it behind a reverse proxy that adds TLS.\n\n## Errors\n\nErrors raised by an operation have a JSON body with a single `error` field:\n\n```json\n{\"error\": \"Internal Server Error\"}\n```\n\nUnexpected failures, including panics, are logged on the server and returned as a `500` with a generic message, so internal details never reach the client.\n\nRouting errors come from the router before any operation runs, and have a **plain-text** body:\n\n| Status | When | Body |\n|--------|------|------|\n| `404` | No route matches the path. | `404 page not found` |\n| `405` | The path exists, but not for this method. The `Allow` header lists the methods that are, e.g. `Allow: GET, HEAD`. | `Method Not Allowed` |\n\n## Timeouts\n\nThe server closes connections that are slow to send headers (5 s) or a request (15 s), and responses that take longer than 15 s to write. A live camera stream ([`GET /cameras/{sn}/stream`](#operation/getCameraStream)) is the exception: it stays open until the client closes it. Idle keep-alive connections are closed after 60 s. On `SIGTERM` or `SIGINT` it stops accepting new connections and waits for in-flight requests to finish before exiting.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -25,6 +25,14 @@
     {
       "name": "Calendar",
       "description": "Events read from `.ics` files on the host.\n\nThe server reads every `.ics` file under the directory set by `calendar.dir` in the config file (or `LCARS_CALENDAR_DIR`), including subdirectories, and re-reads it every `calendar.refresh_interval` (default one hour). Recurring events are expanded, including exceptions (`EXDATE`) and edited or cancelled occurrences (`RECURRENCE-ID`). A file that can't be parsed is skipped and logged on the server; the rest are still served.\n\nEach event belongs to a calendar, named by the file's `X-WR-CALNAME` if set, otherwise by the top-level subdirectory the file is in, otherwise by the file name without `.ics`. So both `calendars/family.ics` and `calendars/family/*.ics` give a calendar named `family`."
+    },
+    {
+      "name": "Admin",
+      "description": "The admin page, and the API it uses to manage device tokens. Enabled only when Supabase is configured; otherwise every admin API operation answers `503`.\n\nA device token's secret is returned once, when the token is created, and never stored: only a SHA-256 hash of it is. If it is lost, revoke the token and create a new one."
+    },
+    {
+      "name": "Cameras",
+      "description": "Cameras from the Eufy proxy named by `eufy.url` (`LCARS_EUFY_URL`). When that is unset, every camera operation answers `503`.\n\n`GET /cameras` is the same catalog as `lcars.cameras.list`. `stream_path` and `snapshot_path` are paths on this server. The live video is Annex-B bytes and is not sent over NATS. Closing the stream response stops that viewer. A missing snapshot is `404` and does not wake the camera."
     },
     {
       "name": "Documentation",
@@ -84,7 +92,7 @@
           "Calendar"
         ],
         "summary": "List events by day",
-        "description": "Returns the events in a range of days, grouped by day, ready to draw as an agenda or week view. Every day in the range is present, in order, even if it has no events.\n\nDates and times are in the server's timezone (`timezone` in the config file, or the host's), which the response reports. An event that spans several days appears on each of them. Within a day, all-day events come first, then timed events by start time.\n\nEvents are read from disk periodically, not on each request; `updated_at` says when they were last read.\n\nThe same data is available over NATS as a protobuf `GetCalendarResponse`, by sending a `GetCalendarRequest` on `lcars.calendar.get`. Subscribe to `lcars.calendar.updated` to learn when to fetch it again.",
+        "description": "Returns the events in a range of days, grouped by day, ready to draw as an agenda or week view. Every day in the range is present, in order, even if it has no events.\n\nDates and times are in the server's timezone (`timezone` in the config file, or the host's), which the response reports. An event that spans several days appears on each of them. Within a day, all-day events come first, then timed events by start time.\n\nEvents are read from disk periodically, not on each request; `updated_at` says when they were last read.\n\nThe same data is available over NATS as a protobuf `GetCalendarResponse`, by sending a `GetCalendarRequest` on `lcars.calendar.get`. Subscribe to `lcars.calendar.updated` to learn when to fetch it again.\n\nWhen authentication is on, this needs a device token (Basic auth).",
         "parameters": [
           {
             "name": "from",
@@ -199,6 +207,9 @@
               }
             }
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
           "500": {
             "$ref": "#/components/responses/InternalError"
           },
@@ -215,7 +226,179 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "deviceToken": []
+          },
+          {}
+        ]
+      }
+    },
+    "/cameras": {
+      "get": {
+        "operationId": "listCameras",
+        "tags": ["Cameras"],
+        "summary": "List cameras",
+        "description": "The cameras the configured proxy currently reports, in the proxy's order. `stream_path` and `snapshot_path` are paths on this server. An empty `cameras` array means the proxy is up and has no devices.",
+        "responses": {
+          "200": {
+            "description": "The catalog.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CameraList" },
+                "example": {
+                  "cameras": [
+                    {
+                      "sn": "CAM1",
+                      "name": "Front door",
+                      "has_camera": true,
+                      "stream_path": "/cameras/CAM1/stream",
+                      "snapshot_path": "/cameras/CAM1/snapshot"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "503": {
+            "description": "Cameras are not configured, or the camera proxy could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "cameras are not configured: set eufy.url in the config file" }
+              }
+            }
+          }
+        },
+        "security": [{ "deviceToken": [] }, {}]
+      }
+    },
+    "/cameras/{sn}/stream": {
+      "get": {
+        "operationId": "getCameraStream",
+        "tags": ["Cameras"],
+        "summary": "Open a live camera stream",
+        "description": "Annex-B video for the camera (`video/octet-stream`). The response stays open until the client closes it, which stops that viewer on the proxy. It is not limited by the 15 second write timeout. A failure before the first byte is a JSON error. After the stream has started, a failure closes the connection.",
+        "parameters": [
+          {
+            "name": "sn",
+            "in": "path",
+            "required": true,
+            "description": "Camera serial: 1 to 32 letters or digits.",
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9]{1,32}$" },
+            "example": "CAM1"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The live video. Read until you close the response.",
+            "headers": {
+              "Cache-Control": {
+                "schema": { "type": "string" },
+                "description": "Always `no-store`."
+              }
+            },
+            "content": {
+              "video/octet-stream": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "400": {
+            "description": "The serial is not 1 to 32 letters or digits.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "invalid serial" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": {
+            "description": "The proxy has no camera with that serial.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "camera not found" }
+              }
+            }
+          },
+          "503": {
+            "description": "Cameras are not configured, or the camera proxy could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "cameras are unavailable" }
+              }
+            }
+          }
+        },
+        "security": [{ "deviceToken": [] }, {}]
+      }
+    },
+    "/cameras/{sn}/snapshot": {
+      "get": {
+        "operationId": "getCameraSnapshot",
+        "tags": ["Cameras"],
+        "summary": "Read a stored camera snapshot",
+        "description": "The latest JPEG the proxy has stored for this camera. A miss is `404` and does not wake the camera.",
+        "parameters": [
+          {
+            "name": "sn",
+            "in": "path",
+            "required": true,
+            "description": "Camera serial: 1 to 32 letters or digits.",
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9]{1,32}$" },
+            "example": "CAM1"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored JPEG.",
+            "headers": {
+              "Cache-Control": {
+                "schema": { "type": "string" },
+                "description": "Always `no-store`."
+              }
+            },
+            "content": {
+              "image/jpeg": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "400": {
+            "description": "The serial is not 1 to 32 letters or digits.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "invalid serial" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": {
+            "description": "No stored snapshot for that camera.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "camera not found" }
+              }
+            }
+          },
+          "503": {
+            "description": "Cameras are not configured, or the camera proxy could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "cameras are unavailable" }
+              }
+            }
+          }
+        },
+        "security": [{ "deviceToken": [] }, {}]
       }
     },
     "/openapi.json": {
@@ -287,10 +470,315 @@
           }
         }
       }
+    },
+    "/admin/": {
+      "get": {
+        "operationId": "getAdminPage",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Open the admin page",
+        "description": "Returns the admin page, a single-page app for managing device tokens (sign in, create, list and revoke). Its scripts and styles are served from `/admin/assets/`. `GET /admin` redirects here.\n\nThe page is built into the binary by `make admin-ui` (and in the Docker image). A binary built without it answers `503` with a plain-text note.",
+        "responses": {
+          "200": {
+            "description": "The admin page.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The admin page was not built into this binary.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/admin/api/session": {
+      "post": {
+        "operationId": "createAdminSession",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Sign in",
+        "description": "Signs an admin in with their Supabase Auth email and password, and returns an access token for the other admin operations. Supabase Auth limits how often sign-in can be attempted.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignInRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "The email or password is wrong.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "invalid email or password"
+                }
+              }
+            }
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "description": "Too many sign-in attempts. Try again later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "too many sign-in attempts; try again later"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/AdminUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/admin/api/tokens": {
+      "get": {
+        "operationId": "listDeviceTokens",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List device tokens",
+        "description": "Lists every device token, oldest first. Secrets are never included.",
+        "security": [
+          {
+            "adminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The device tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "tokens"
+                  ],
+                  "properties": {
+                    "tokens": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DeviceToken"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminUnauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/AdminUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createDeviceToken",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Create a device token",
+        "description": "Creates a device token and returns it with its secret. The secret is not stored and cannot be retrieved again. The token works immediately, over HTTP and NATS.",
+        "security": [
+          {
+            "adminSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDeviceTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new token, with its secret.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewDeviceToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminUnauthorized"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "503": {
+            "$ref": "#/components/responses/AdminUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/admin/api/tokens/{id}": {
+      "delete": {
+        "operationId": "revokeDeviceToken",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Revoke a device token",
+        "description": "Deletes a device token. It stops working immediately, and NATS connections using it are closed.",
+        "security": [
+          {
+            "adminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The token's ID.",
+            "schema": {
+              "type": "string",
+              "example": "dev_7f3k2m9q4x8w"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked."
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminUnauthorized"
+          },
+          "404": {
+            "description": "There is no token with this ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "no such device token"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/AdminUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "Camera": {
+        "type": "object",
+        "required": ["sn", "name", "has_camera", "stream_path", "snapshot_path"],
+        "properties": {
+          "sn": {
+            "type": "string",
+            "description": "Camera serial, letters and digits.",
+            "examples": ["CAM1"]
+          },
+          "name": {
+            "type": "string",
+            "description": "Name from the camera account. May be empty.",
+            "examples": ["Front door"]
+          },
+          "has_camera": {
+            "type": "boolean",
+            "description": "True when `stream_path` can be opened."
+          },
+          "stream_path": {
+            "type": "string",
+            "description": "Path of the live Annex-B video on this server.",
+            "examples": ["/cameras/CAM1/stream"]
+          },
+          "snapshot_path": {
+            "type": "string",
+            "description": "Path of the latest stored JPEG on this server.",
+            "examples": ["/cameras/CAM1/snapshot"]
+          }
+        }
+      },
+      "CameraList": {
+        "type": "object",
+        "required": ["cameras"],
+        "properties": {
+          "cameras": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Camera" }
+          }
+        }
+      },
       "Health": {
         "type": "object",
         "required": [
@@ -484,6 +972,109 @@
             ]
           }
         }
+      },
+      "SignInRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "admin@example.com"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_at",
+          "email"
+        ],
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "description": "Send as `Authorization: Bearer <access_token>` to the other admin operations."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the access token expires (UTC)."
+          },
+          "email": {
+            "type": "string",
+            "description": "The signed-in admin's email."
+          }
+        }
+      },
+      "DeviceToken": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^dev_[a-z0-9]{12}$",
+            "description": "The token's ID, which is also its username.",
+            "example": "dev_7f3k2m9q4x8w"
+          },
+          "name": {
+            "type": "string",
+            "description": "A label for the device.",
+            "example": "Kitchen display"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NewDeviceToken": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DeviceToken"
+          },
+          {
+            "type": "object",
+            "required": [
+              "secret"
+            ],
+            "properties": {
+              "secret": {
+                "type": "string",
+                "description": "The token's password: 43 base64url characters. Returned only here; store it on the device now.",
+                "example": "q0Zr2J3c1Vt8yE6wBqk4nLx9HcT5sPaMdUe7RfGiYoK"
+              }
+            }
+          }
+        ]
+      },
+      "CreateDeviceTokenRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "A label for the device. Leading and trailing spaces are removed.",
+            "example": "Kitchen display"
+          }
+        }
       }
     },
     "responses": {
@@ -499,6 +1090,91 @@
             }
           }
         }
+      },
+      "Unauthorized": {
+        "description": "No valid device token was sent (only when authentication is on). The `WWW-Authenticate` header asks for Basic auth.",
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string"
+            },
+            "example": "Basic realm=\"lcars\", charset=\"UTF-8\""
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "a device token is required: send its username and password as HTTP Basic auth"
+            }
+          }
+        }
+      },
+      "AdminUnauthorized": {
+        "description": "No access token was sent, or it is invalid or expired. Sign in again.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "your session has expired; sign in again"
+            }
+          }
+        }
+      },
+      "AdminUnavailable": {
+        "description": "The admin API is disabled because Supabase is not configured, or Supabase could not be reached (details are logged on the server).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "the admin API is disabled: set supabase.url and supabase.secret_key in the config file"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "The request body is not valid JSON, has unknown fields, or has invalid values.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "invalid JSON body"
+            }
+          }
+        }
+      },
+      "UnsupportedMediaType": {
+        "description": "The request body is not sent as `application/json`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "send a JSON body with Content-Type: application/json"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "deviceToken": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "A device token's username (e.g. `dev_7f3k2m9q4x8w`) and secret. Required only when Supabase is configured."
+      },
+      "adminSession": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An access token from `POST /admin/api/session`. It expires after an hour by default."
       }
     }
   }

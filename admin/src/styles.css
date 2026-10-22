@@ -1,0 +1,453 @@
+/* LCARS-style admin page. Dark only, like the display it administers. */
+
+:root {
+  --bg: #000;
+  --text: #f4e9dc;
+  --muted: #b8a99a;
+  --orange: #ff9c00;
+  --peach: #ffcc99;
+  --lilac: #cc99cc;
+  --violet: #9a8fe0;
+  --blue: #99ccff;
+  --red: #e0655a;
+  --panel: #12100e;
+  --line: #3a332c;
+  --radius-pill: 999px;
+  --elbow: 2.5rem;
+  --font: "Antonio", "Oswald", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+h1,
+h2 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+h2 {
+  color: var(--peach);
+  font-size: 1.15rem;
+  margin-bottom: 0.75rem;
+}
+
+p {
+  margin: 0 0 0.75rem;
+}
+
+code,
+input[readonly] {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --- frame ------------------------------------------------------------ */
+
+.frame {
+  min-height: 100vh;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.frame-top {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 6px;
+}
+
+.elbow-top {
+  background: var(--orange);
+  border-top-left-radius: var(--elbow);
+  min-height: 4.5rem;
+}
+
+.top-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  flex-wrap: wrap;
+  padding: 0.25rem 0 0 0.75rem;
+}
+
+.stripe {
+  height: 1.25rem;
+  background: var(--orange);
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+}
+
+.bar h1 {
+  font-size: clamp(1.3rem, 3vw, 2rem);
+  color: var(--orange);
+}
+
+.brand {
+  color: var(--lilac);
+}
+
+.bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.who {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.frame-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 6px;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.block {
+  color: #000;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-align: right;
+  padding: 2.5rem 0.6rem 0.3rem;
+}
+
+.b1 {
+  background: var(--lilac);
+}
+
+.b2 {
+  background: var(--violet);
+}
+
+.b3 {
+  background: var(--peach);
+}
+
+.b4 {
+  background: var(--orange);
+  flex: 1;
+  border-bottom-left-radius: var(--elbow);
+}
+
+.content {
+  padding: 0.5rem 0 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .frame-top,
+  .frame-body {
+    grid-template-columns: 1fr;
+  }
+
+  .elbow-top,
+  .sidebar {
+    display: none;
+  }
+
+  .bar {
+    padding-left: 0;
+  }
+
+  .stripe {
+    border-radius: var(--radius-pill);
+  }
+
+  .content {
+    padding-left: 0;
+  }
+}
+
+/* --- panels and forms --------------------------------------------------- */
+
+.panel {
+  background: var(--panel);
+  border-left: 0.6rem solid var(--violet);
+  border-radius: 0 1rem 1rem 0;
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.panel.narrow {
+  max-width: 28rem;
+}
+
+.panel.highlight {
+  border-left-color: var(--orange);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+
+.stack label {
+  align-self: stretch;
+}
+
+.row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.grow {
+  flex: 1 1 14rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: var(--peach);
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+input {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  background: #000;
+  color: var(--text);
+  border: 2px solid var(--line);
+  border-radius: 0.4rem;
+  font: inherit;
+  font-size: 1rem;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+input:focus-visible {
+  outline: none;
+  border-color: var(--blue);
+}
+
+/* --- buttons ------------------------------------------------------------ */
+
+.pill {
+  appearance: none;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--orange);
+  color: #000;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.55rem 1.4rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pill:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.pill:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pill-quiet {
+  background: var(--lilac);
+}
+
+.pill-small {
+  padding: 0.3rem 0.9rem;
+  font-size: 0.8rem;
+}
+
+.pill-danger {
+  background: var(--red);
+}
+
+/* --- messages ----------------------------------------------------------- */
+
+.message {
+  border-left: 0.4rem solid var(--blue);
+  padding: 0.4rem 0.75rem;
+  background: #0b1520;
+}
+
+.message.error {
+  border-left-color: var(--red);
+  background: #200d0b;
+}
+
+.message.warn {
+  border-left-color: var(--orange);
+  background: #201608;
+}
+
+/* --- new token credentials --------------------------------------------- */
+
+.credentials {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+}
+
+.credential {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.credential dt label {
+  display: block;
+}
+
+.credential dd {
+  margin: 0;
+  display: flex;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .credential {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+}
+
+/* --- token table -------------------------------------------------------- */
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  text-align: left;
+  color: var(--peach);
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  border-bottom: 2px solid var(--line);
+}
+
+td {
+  padding: 0.55rem 0.75rem 0.55rem 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+td code {
+  color: var(--blue);
+}
+
+td.actions {
+  text-align: right;
+  padding-right: 0;
+}
+
+/* Narrow screens: one card per token instead of a table. */
+@media (max-width: 640px) {
+  thead {
+    display: none;
+  }
+
+  table,
+  tbody,
+  tr,
+  td {
+    display: block;
+    width: 100%;
+  }
+
+  tr {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  td {
+    padding: 0.1rem 0;
+    border: 0;
+  }
+
+  td.name {
+    font-weight: 600;
+  }
+
+  td[data-label]::before {
+    content: attr(data-label);
+    display: inline-block;
+    min-width: 6rem;
+    color: var(--peach);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  td.actions {
+    text-align: left;
+    padding-top: 0.4rem;
+  }
+}

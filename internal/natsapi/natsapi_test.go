@@ -27,7 +27,7 @@ var discard = slog.New(slog.DiscardHandler)
 // connect starts an embedded NATS server and returns a connection to it.
 func connect(t *testing.T) *nats.Conn {
 	t.Helper()
-	b, err := broker.Start(config.NATS{Addr: "127.0.0.1:0"}, discard)
+	b, err := broker.Start(config.NATS{Addr: "127.0.0.1:0"}, nil, discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func connect(t *testing.T) *nats.Conn {
 func startService(t *testing.T, deps Deps) *nats.Conn {
 	t.Helper()
 	nc := connect(t)
-	svc, err := Start(nc, discard, "v1.2.3", deps)
+	svc, err := Start(t.Context(), nc, discard, "v1.2.3", deps)
 	if err != nil {
 		t.Fatal(err)
 	}

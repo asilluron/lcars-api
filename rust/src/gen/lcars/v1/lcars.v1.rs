@@ -98,4 +98,48 @@ pub struct CalendarUpdated {
     #[prost(int64, tag="1")]
     pub updated_at_unix: i64,
 }
+/// ListCamerasRequest asks for the cameras the server can show. Send it as a
+/// request on the subject "lcars.cameras.list"; the reply is a
+/// ListCamerasResponse. An empty message (or an empty body) is the whole
+/// request.
+///
+/// The reply does not carry video. stream_path and snapshot_path are paths on
+/// this same HTTP server. Open them with GET, and with the device token when
+/// authentication is on. Closing the stream response stops that viewer.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid request, 503 if cameras are
+/// not configured or the camera proxy is unreachable, 500 otherwise) and
+/// "Nats-Service-Error" (a message).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListCamerasRequest {
+}
+/// ListCamerasResponse is the cameras a device can open. The order is the
+/// camera proxy's order.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListCamerasResponse {
+    #[prost(message, repeated, tag="1")]
+    pub cameras: ::prost::alloc::vec::Vec<Camera>,
+}
+/// Camera is one device the camera proxy reported.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Camera {
+    /// Serial number, letters and digits only.
+    #[prost(string, tag="1")]
+    pub sn: ::prost::alloc::string::String,
+    /// Name from the camera account, which may be empty.
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    /// True when this device has a camera and stream_path can be opened.
+    #[prost(bool, tag="3")]
+    pub has_camera: bool,
+    /// HTTP path of the live Annex-B video, such as "/cameras/CAM1/stream".
+    /// The body is video/octet-stream and stays open until the client closes it.
+    #[prost(string, tag="4")]
+    pub stream_path: ::prost::alloc::string::String,
+    /// HTTP path of the latest stored JPEG, such as "/cameras/CAM1/snapshot".
+    /// A missing snapshot is 404 and does not wake the camera.
+    #[prost(string, tag="5")]
+    pub snapshot_path: ::prost::alloc::string::String,
+}
 // @@protoc_insertion_point(module)

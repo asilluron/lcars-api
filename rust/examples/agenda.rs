@@ -7,10 +7,14 @@
 //! Arguments: the NATS server URL, then optionally the first day (YYYY-MM-DD,
 //! default today) and the number of days (default 7). With `--watch` after
 //! them, it prints the calendar again each time the server reports a change.
+//!
+//! When the server requires a device token (made on its admin page), pass it
+//! in the environment as `NATS_USER` (the token's username) and
+//! `NATS_PASSWORD` (its secret).
 
 use std::process::ExitCode;
 
-use async_nats::Client;
+use async_nats::{Client, ConnectOptions};
 use futures::StreamExt;
 use lcars_proto::headers;
 use lcars_proto::prost::Message;
@@ -56,7 +60,11 @@ async fn run(
     req: GetCalendarRequest,
     watch: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let client = async_nats::connect(url).await?;
+    let options = match (std::env::var("NATS_USER"), std::env::var("NATS_PASSWORD")) {
+        (Ok(user), Ok(password)) => ConnectOptions::new().user_and_password(user, password),
+        _ => ConnectOptions::new(),
+    };
+    let client = options.connect(url).await?;
     // Subscribe before the first request so no update is missed.
     let mut updates = client.subscribe(subjects::CALENDAR_UPDATED).await?;
     print_calendar(&get_calendar(&client, &req).await?);

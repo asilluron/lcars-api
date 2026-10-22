@@ -8,6 +8,11 @@ Dockerfile
 .dockerignore
 lcars.toml
 rust
+admin/node_modules
+admin/test-results
+admin/playwright-report
 # The camera proxy is its own image (eufy/Dockerfile). Keep its source, and
 # any session file, out of the lcars-api image.
 eufy
+internal/adminui/dist
+supabase

@@ -48,8 +48,9 @@
 
 [nats]
 # The API is served over NATS. By default lcars-api runs its own embedded
-# NATS server, which devices connect to at nats://<this host>:4222. It has no
-# authentication, so keep it on a trusted network.
+# NATS server, which devices connect to at nats://<this host>:4222. Devices
+# need a token to connect when [supabase] is configured; otherwise anyone on
+# the network can, so keep it on a trusted network.
 #
 # Address the embedded NATS server listens on. Use "127.0.0.1:4222" to accept
 # local connections only. Ignored when url is set.
@@ -82,3 +83,36 @@
 # (server.pem, server.key). Required when tls_hosts is set without tls_cert.
 # Env: LCARS_NATS_TLS_DIR
 # tls_dir = "/srv/lcars/nats-tls"
+
+[supabase]
+# Device tokens and the admins who manage them are stored in Supabase (a
+# local one started with `supabase start` in this repository). When these
+# are set, devices must authenticate with a token (HTTP Basic auth, or
+# user/password on NATS), and the admin page at /admin/ is enabled. Leave
+# them unset to run without authentication.
+#
+# `supabase status` prints both values. The secret key grants full access to
+# the database: keep it in this file (which is gitignored) or the environment,
+# never in the repository.
+
+# The API URL.
+# Env: LCARS_SUPABASE_URL
+# url = "http://127.0.0.1:54321"
+
+# The secret key (sb_secret_...), or the legacy service_role key.
+# Env: LCARS_SUPABASE_SECRET_KEY
+# secret_key = "sb_secret_REPLACE_ME"
+
+# How often to re-read the device tokens, to pick up changes made directly in
+# the database (changes made on the admin page apply immediately).
+# Minimum "1s".
+# Env: LCARS_SUPABASE_REFRESH_INTERVAL
+# refresh_interval = "1m"
+
+[eufy]
+# The Eufy camera proxy (see eufy/README.md). When set, devices can list
+# cameras and open their live video through this server. The proxy itself
+# stays on this machine; devices talk only to lcars-api. Leave unset to
+# disable cameras.
+# Env: LCARS_EUFY_URL
+# url = "http://127.0.0.1:3000"

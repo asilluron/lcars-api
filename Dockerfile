@@ -1,6 +1,16 @@
 # syntax=docker/dockerfile:1
 
 ARG GO_VERSION=1.27
+# Also in the Makefile (NODE).
+ARG NODE_VERSION=24.22.1
+
+# The admin page (admin/), built into internal/adminui/dist to be embedded.
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-slim AS admin
+WORKDIR /src/admin
+COPY admin/package.json admin/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY admin/ ./
+RUN npm run build
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build
 WORKDIR /src
@@ -10,6 +20,7 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
+COPY --from=admin /src/internal/adminui/dist/ internal/adminui/dist/
 ARG TARGETOS TARGETARCH
 ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod \

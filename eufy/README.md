@@ -2,8 +2,9 @@
 
 A small process that logs into an Eufy account with
 [`@mega-yfue/eufy-sdk`](https://github.com/mega-yfue/eufy-sdk) and re-serves
-camera feeds on the machine it runs on. It is separate from the lcars-api
-server.
+camera feeds on the machine it runs on. lcars-api proxies those feeds to a
+device when `eufy.url` is set (see the Cameras section of the repository
+README). Devices use lcars-api, not this process.
 
 Independent and unofficial. Not affiliated with Anker or eufy.
 

@@ -8,10 +8,12 @@
 package natsapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/asilluron/lcars-api/internal/calendar"
+	"github.com/asilluron/lcars-api/internal/cameras"
 )
 
 // ServiceName is the NATS service name, for $SRV.PING.lcars and friends.
@@ -36,20 +39,33 @@ const (
 	// SubjectCalendarUpdated carries a CalendarUpdated event whenever the
 	// calendar files change.
 	SubjectCalendarUpdated = "lcars.calendar.updated"
+	// SubjectCamerasList answers a ListCamerasRequest with a
+	// ListCamerasResponse. The video itself is fetched over HTTP.
+	SubjectCamerasList = "lcars.cameras.list"
 )
 
-// Subjects lists every subject the API answers requests on or publishes to.
-var Subjects = []string{SubjectCalendarGet, SubjectCalendarUpdated}
+var (
+	// Requests lists the subjects the API answers requests on. Devices may
+	// publish to them.
+	Requests = []string{SubjectCalendarGet, SubjectCamerasList}
+	// Events lists the subjects the API publishes events to. Devices may
+	// subscribe to them.
+	Events = []string{SubjectCalendarUpdated}
+	// Subjects lists every subject the API answers requests on or publishes
+	// to.
+	Subjects = slices.Concat(Requests, Events)
+)
 
 // Deps are the data sources the handlers read from. A nil field makes the
 // endpoints that need it answer 503.
 type Deps struct {
 	Calendar *calendar.Store
+	Cameras  *cameras.Client
 }
 
 // Start registers the service on nc. version is the build version; it is
-// reported in $SRV.INFO.
-func Start(nc *nats.Conn, logger *slog.Logger, version string, deps Deps) (micro.Service, error) {
+// reported in $SRV.INFO. ctx cancels in-flight camera lookups on shutdown.
+func Start(ctx context.Context, nc *nats.Conn, logger *slog.Logger, version string, deps Deps) (micro.Service, error) {
 	svc, err := micro.AddService(nc, micro.Config{
 		Name:        ServiceName,
 		Version:     serviceVersion(version),
@@ -59,7 +75,7 @@ func Start(nc *nats.Conn, logger *slog.Logger, version string, deps Deps) (micro
 	if err != nil {
 		return nil, fmt.Errorf("add NATS service: %w", err)
 	}
-	if err := addEndpoints(svc, logger, deps); err != nil {
+	if err := addEndpoints(ctx, svc, logger, deps); err != nil {
 		_ = svc.Stop()
 		return nil, fmt.Errorf("add NATS endpoints: %w", err)
 	}
@@ -68,12 +84,20 @@ func Start(nc *nats.Conn, logger *slog.Logger, version string, deps Deps) (micro
 
 // addEndpoints is the single place to see every request subject the API
 // answers.
-func addEndpoints(svc micro.Service, logger *slog.Logger, deps Deps) error {
-	return svc.AddEndpoint("calendar_get", handle(logger, calendarGet(deps.Calendar)),
+func addEndpoints(ctx context.Context, svc micro.Service, logger *slog.Logger, deps Deps) error {
+	if err := svc.AddEndpoint("calendar_get", handle(logger, calendarGet(deps.Calendar)),
 		micro.WithEndpointSubject(SubjectCalendarGet),
 		micro.WithEndpointMetadata(map[string]string{
 			"request":  "lcars.v1.GetCalendarRequest",
 			"response": "lcars.v1.GetCalendarResponse",
+		})); err != nil {
+		return err
+	}
+	return svc.AddEndpoint("cameras_list", handle(logger, camerasList(ctx, logger, deps.Cameras)),
+		micro.WithEndpointSubject(SubjectCamerasList),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.ListCamerasRequest",
+			"response": "lcars.v1.ListCamerasResponse",
 		}))
 }
 

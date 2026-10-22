@@ -40,18 +40,22 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 // connection.
 func recoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			v := recover()
-			if v == nil {
-				return
-			}
-			if err, ok := v.(error); ok && errors.Is(err, http.ErrAbortHandler) {
-				panic(v) // deliberate abort; let net/http handle it
-			}
-			logger.ErrorContext(r.Context(), "panic in handler",
-				"panic", v, "method", r.Method, "path", r.URL.Path)
-			writeError(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
-		}()
+		defer recoverPanic(logger, w, r)
 		next.ServeHTTP(w, r)
 	})
+}
+
+// recoverPanic is deferred by recoverPanics, so its recover() stops a panic
+// in the handler for r.
+func recoverPanic(logger *slog.Logger, w http.ResponseWriter, r *http.Request) {
+	v := recover()
+	if v == nil {
+		return
+	}
+	if err, ok := v.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+		panic(v) // deliberate abort; let net/http handle it
+	}
+	logger.ErrorContext(r.Context(), "panic in handler",
+		"panic", v, "method", r.Method, "path", r.URL.Path)
+	writeError(w, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 }

@@ -47,6 +47,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.NATS.Addr != ":4222" || cfg.NATS.URL != "" {
 		t.Errorf("NATS = %+v, want embedded server on :4222", cfg.NATS)
 	}
+	if cfg.Supabase.Enabled() || cfg.Supabase.RefreshInterval != time.Minute {
+		t.Errorf("Supabase = %+v, want disabled with 1m refresh", cfg.Supabase)
+	}
 }
 
 func TestLoadEnv(t *testing.T) {
@@ -61,6 +64,9 @@ func TestLoadEnv(t *testing.T) {
 		"LCARS_CALENDAR_REFRESH_INTERVAL": "5m",
 		"LCARS_NATS_ADDR":                 "127.0.0.1:4333",
 		"LCARS_NATS_URL":                  "nats://192.0.2.10:4222",
+		"LCARS_SUPABASE_URL":              "http://192.0.2.10:54321/",
+		"LCARS_SUPABASE_SECRET_KEY":       "example-secret-key",
+		"LCARS_SUPABASE_REFRESH_INTERVAL": "30s",
 	}))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -69,7 +75,9 @@ func TestLoadEnv(t *testing.T) {
 		cfg.LogFormat != "text" || cfg.ShutdownTimeout != 3*time.Second ||
 		cfg.Location.String() != "Europe/Berlin" ||
 		cfg.Calendar.Dir != dir || cfg.Calendar.RefreshInterval != 5*time.Minute ||
-		cfg.NATS.Addr != "127.0.0.1:4333" || cfg.NATS.URL != "nats://192.0.2.10:4222" {
+		cfg.NATS.Addr != "127.0.0.1:4333" || cfg.NATS.URL != "nats://192.0.2.10:4222" ||
+		cfg.Supabase.URL != "http://192.0.2.10:54321" || cfg.Supabase.SecretKey != "example-secret-key" ||
+		cfg.Supabase.RefreshInterval != 30*time.Second || !cfg.Supabase.Enabled() {
 		t.Errorf("unexpected config: %+v", cfg)
 	}
 }
@@ -200,6 +208,23 @@ func TestLoadInvalid(t *testing.T) {
 		"non-string value":     {file: "[calendar]\nrefresh_interval = 60", wantErr: "calendar.refresh_interval: must be a string"},
 		"bad value in file":    {file: "log_format = \"xml\"", wantErr: "log_format: must be json or text"},
 		"bad timezone in file": {file: "timezone = \"Nowhere\"", wantErr: "timezone: unknown timezone"},
+		"supabase url scheme":  {env: map[string]string{"LCARS_SUPABASE_URL": "127.0.0.1:54321"}, wantErr: "LCARS_SUPABASE_URL"},
+		"supabase url creds": {
+			env:     map[string]string{"LCARS_SUPABASE_URL": "http://user:pw@192.0.2.10:54321"},
+			wantErr: "must not contain credentials",
+		},
+		"supabase url only": {
+			env:     map[string]string{"LCARS_SUPABASE_URL": "http://192.0.2.10:54321"},
+			wantErr: "must be set together",
+		},
+		"supabase key only": {
+			env:     map[string]string{"LCARS_SUPABASE_SECRET_KEY": "example-secret-key"},
+			wantErr: "must be set together",
+		},
+		"supabase refresh too fast": {
+			env:     map[string]string{"LCARS_SUPABASE_REFRESH_INTERVAL": "100ms"},
+			wantErr: "LCARS_SUPABASE_REFRESH_INTERVAL",
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

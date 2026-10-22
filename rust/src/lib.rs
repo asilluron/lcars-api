@@ -7,6 +7,7 @@
 //! |----------------------------------------|---------------|------------------------------------------------------|
 //! | [`subjects::CALENDAR_GET`]             | request/reply | [`v1::GetCalendarRequest`] → [`v1::GetCalendarResponse`] |
 //! | [`subjects::CALENDAR_UPDATED`]         | event         | [`v1::CalendarUpdated`]                              |
+//! | [`subjects::CAMERAS_LIST`]             | request/reply | [`v1::ListCamerasRequest`] → [`v1::ListCamerasResponse`] |
 //!
 //! A failed request gets a reply with an empty body and two headers:
 //! [`headers::ERROR_CODE`] (an HTTP-style status such as `"400"`) and
@@ -51,6 +52,12 @@ pub mod subjects {
     /// A [`CalendarUpdated`](crate::v1::CalendarUpdated) is published here
     /// when the calendar changes. Request the calendar again on receipt.
     pub const CALENDAR_UPDATED: &str = "lcars.calendar.updated";
+    /// Request a [`ListCamerasRequest`](crate::v1::ListCamerasRequest); the
+    /// reply is a [`ListCamerasResponse`](crate::v1::ListCamerasResponse).
+    /// Each camera's `stream_path` and `snapshot_path` are HTTP paths on
+    /// this server. Video is not sent on NATS. Close the stream response
+    /// to stop that viewer.
+    pub const CAMERAS_LIST: &str = "lcars.cameras.list";
 }
 
 /// Headers on error replies (the NATS service API convention).

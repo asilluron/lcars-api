@@ -10,3 +10,6 @@ rules:
   # Most operations are GETs with no parameters, which cannot fail with a 4xx.
   # Router-level 404/405s are documented once in info.description instead.
   operation-4xx-response: off
+  # The admin page is served at /admin/ (a directory) so the assets it loads
+  # resolve under /admin/assets/; GET /admin redirects there.
+  no-path-trailing-slash: off

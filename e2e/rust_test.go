@@ -17,32 +17,40 @@ import (
 )
 
 // TestRustClient runs the Rust example client (rust/examples/agenda.rs) against
-// the Docker image, over NATS on a Docker network. It checks that the
-// generated Rust (prost) types decode what the server sends, that error
-// replies are recognized, and that the client hears about calendar changes.
+// the Docker image, over NATS, with device authentication on: the server and
+// the client run on the local Supabase stack's Docker network. It checks that
+// the client authenticates with a device token, that the generated Rust
+// (prost) types decode what the server sends, that error replies are
+// recognized, and that the client hears about calendar changes.
 func TestRustClient(t *testing.T) {
 	requireDocker(t)
+	sb := requireSupabase(t)
 	buildImage(t)
+	email, password := createAdmin(t)
 
-	network := "lcars-e2e-" + strconv.Itoa(os.Getpid())
-	docker(t, "network", "create", network)
-	t.Cleanup(func() { _ = exec.Command("docker", "network", "rm", network).Run() })
+	network := supabaseNetwork
+	alias := "lcars-rust-" + strconv.Itoa(os.Getpid())
 
 	// A writable copy of the fixtures, so the test can add a file. The mounted
 	// directory must be readable by the image's nonroot user.
 	dir := filepath.Join(t.TempDir(), "calendars")
 	copyDir(t, fixturesDir(t), dir)
 
+	// The secret key goes in the config file, as it would in production.
+	config := writeConfigFile(t, "[supabase]\nurl = \""+supabaseKongURL+"\"\nsecret_key = \""+sb.SecretKey+"\"\n")
 	server := strings.TrimSpace(docker(t, "run", "-d",
-		"--network", network, "--network-alias", "lcars",
+		"--network", network, "--network-alias", alias,
 		"-p", "127.0.0.1::8080",
 		"-v", dir+":/calendars:ro",
+		"-v", config+":/config/lcars.toml:ro",
 		"-e", "LCARS_CALENDAR_DIR=/calendars",
 		"-e", "LCARS_CALENDAR_REFRESH_INTERVAL=1s",
 		"-e", "LCARS_TIMEZONE=America/New_York",
 		image))
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", server).Run() })
-	waitReady(t, "http://"+dockerPort(t, server, "8080/tcp")+"/healthz")
+	base := "http://" + dockerPort(t, server, "8080/tcp")
+	waitReady(t, base+"/healthz")
+	tok := createToken(t, base, signIn(t, base, email, password), "Rust client")
 
 	rustDir, err := filepath.Abs("../rust")
 	if err != nil {
@@ -58,11 +66,14 @@ func TestRustClient(t *testing.T) {
 		"-w", "/src",
 		makeVar(t, "RUST"),
 	}
+	// The token is passed to the client as NATS_USER and NATS_PASSWORD.
+	credentials := []string{"-e", "NATS_USER=" + tok.ID, "-e", "NATS_PASSWORD=" + tok.Secret}
 	run := func(timeout time.Duration, args ...string) (string, error) {
 		ctx, cancel := context.WithTimeout(t.Context(), timeout)
 		defer cancel()
 		var out bytes.Buffer
-		cmd := exec.CommandContext(ctx, "docker", append(append([]string{"run", "--rm"}, rustArgs...), args...)...)
+		cmd := exec.CommandContext(ctx, "docker",
+			append(append(append([]string{"run", "--rm"}, credentials...), rustArgs...), args...)...)
 		cmd.Stdout, cmd.Stderr = &out, &out
 		err := cmd.Run()
 		return out.String(), err
@@ -72,10 +83,8 @@ func TestRustClient(t *testing.T) {
 	if out, err := run(15*time.Minute, "cargo", "build", "--locked", "--example", "agenda"); err != nil {
 		t.Fatalf("cargo build: %v\n%s", err, out)
 	}
-	const (
-		agenda = "/target/debug/examples/agenda"
-		url    = "nats://lcars:4222"
-	)
+	const agenda = "/target/debug/examples/agenda"
+	url := "nats://" + alias + ":4222"
 
 	t.Run("calendar", func(t *testing.T) {
 		out, err := run(time.Minute, agenda, url, "2030-03-04", "7")
@@ -97,9 +106,22 @@ func TestRustClient(t *testing.T) {
 		}
 	})
 
+	t.Run("no credentials", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, "docker", append(append([]string{"run", "--rm"}, rustArgs...),
+			agenda, url, "2030-03-04", "1")...).CombinedOutput()
+		if err == nil {
+			t.Fatalf("agenda without a token succeeded:\n%s", out)
+		}
+		if !strings.Contains(strings.ToLower(string(out)), "authorization") {
+			t.Errorf("output = %q, want an authorization error", out)
+		}
+	})
+
 	t.Run("watch", func(t *testing.T) {
 		id := strings.TrimSpace(docker(t,
-			append(append([]string{"run", "-d"}, rustArgs...), agenda, url, "2030-03-04", "1", "--watch")...))
+			append(append(append([]string{"run", "-d"}, credentials...), rustArgs...), agenda, url, "2030-03-04", "1", "--watch")...))
 		t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
 		logs := func() string { return docker(t, "logs", id) }
 

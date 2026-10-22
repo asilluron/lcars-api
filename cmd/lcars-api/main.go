@@ -12,13 +12,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 
 	"github.com/asilluron/lcars-api/internal/broker"
 	"github.com/asilluron/lcars-api/internal/calendar"
+	"github.com/asilluron/lcars-api/internal/cameras"
 	"github.com/asilluron/lcars-api/internal/config"
+	"github.com/asilluron/lcars-api/internal/devices"
 	"github.com/asilluron/lcars-api/internal/natsapi"
 	"github.com/asilluron/lcars-api/internal/server"
+	"github.com/asilluron/lcars-api/internal/supabase"
 )
 
 func main() {
@@ -55,7 +59,33 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		logger.Info("calendar disabled: calendar.dir is not set")
 	}
 
-	bus, err := broker.Start(cfg.NATS, logger)
+	// Device tokens, when Supabase is configured. bus is set below; tokens
+	// can only be removed once the servers are running.
+	var (
+		bus    *broker.Broker
+		tokens *devices.Store
+		admins server.AdminAuth
+		auth   *broker.Auth
+	)
+	if cfg.Supabase.Enabled() {
+		db := supabase.New(cfg.Supabase.URL, cfg.Supabase.SecretKey)
+		admins = db
+		tokens = devices.NewStore(db, logger, func(id string) { bus.Disconnect(id) })
+		if err := tokens.Load(ctx); err != nil {
+			// Keep going: Run retries, and until then devices are refused.
+			logger.Error("device tokens unavailable; devices are refused until they load", "err", err)
+		}
+		auth = &broker.Auth{
+			Check:     tokens.Check,
+			Publish:   natsapi.Requests,
+			Subscribe: append(slices.Clone(natsapi.Events), "_INBOX.>"),
+		}
+		logger.Info("device authentication enabled", "supabase", cfg.Supabase.URL)
+	} else {
+		logger.Warn("device authentication disabled: supabase.url is not set, so anyone on the network can use the API")
+	}
+
+	bus, err = broker.Start(cfg.NATS, auth, logger)
 	if err != nil {
 		return err
 	}
@@ -72,7 +102,15 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		}
 	}()
 
-	svc, err := natsapi.Start(bus.Conn, logger, server.Version(), natsapi.Deps{Calendar: cal})
+	var cams *cameras.Client
+	if cfg.Eufy.URL != "" {
+		cams = cameras.New(cfg.Eufy.URL)
+		logger.Info("cameras enabled")
+	} else {
+		logger.Info("cameras disabled: eufy.url is not set")
+	}
+
+	svc, err := natsapi.Start(ctx, bus.Conn, logger, server.Version(), natsapi.Deps{Calendar: cal, Cameras: cams})
 	if err != nil {
 		return err
 	}
@@ -80,10 +118,19 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 	if cal != nil {
 		go cal.Run(ctx, cfg.Calendar.RefreshInterval, natsapi.CalendarChanged(bus.Conn, logger))
 	}
+	if tokens != nil {
+		go tokens.Run(ctx, cfg.Supabase.RefreshInterval)
+	}
 
 	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           server.New(logger, server.Deps{Calendar: cal, NATS: bus.Conn}),
+		Addr: cfg.Addr,
+		Handler: server.New(logger, server.Deps{
+			Calendar: cal,
+			Cameras:  cams,
+			NATS:     bus.Conn,
+			Devices:  tokens,
+			Admins:   admins,
+		}),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

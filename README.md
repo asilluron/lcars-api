@@ -11,11 +11,14 @@ there is nothing else to install. Generated Rust types
 ([prost](https://github.com/tokio-rs/prost)) for the display's client are in
 [`rust/`](rust/).
 
-A small HTTP server runs alongside for health checks, API docs, and JSON
-versions of the endpoints.
+A small HTTP server runs alongside for health checks, API docs, JSON
+versions of the endpoints, and an [admin page](#devices-and-the-admin-page)
+for issuing the tokens devices authenticate with. Tokens and admin accounts
+are kept in a local [Supabase](https://supabase.com).
 
-> **No authentication.** Neither NATS nor HTTP is authenticated. The API is
-> meant for a trusted home network only. Don't expose it to the internet.
+> **Home network only.** Without Supabase configured, nothing is
+> authenticated. With it, devices need a token, but traffic is still
+> unencrypted (no TLS). Don't expose the API to the internet.
 
 ## Quick start
 
@@ -28,6 +31,10 @@ curl localhost:8080/healthz       # {"status":"ok","version":"(devel)","nats":"c
 ```
 
 Run `make` to list all targets. `make check` runs the same checks as CI.
+`make run` serves the admin page only after `make admin-ui` has built it.
+
+To turn on device authentication and the admin page, see
+[Devices and the admin page](#devices-and-the-admin-page).
 
 With the [`nats` CLI](https://github.com/nats-io/natscli) you can see the
 service and send an empty request (meaning "the next 7 days"):
@@ -37,24 +44,111 @@ nats --server nats://localhost:4222 micro info lcars
 nats --server nats://localhost:4222 request lcars.calendar.get ''   # protobuf reply
 ```
 
+## Devices and the admin page
+
+When lcars-api is configured with a Supabase project, every device needs a
+**device token** to use the API, and admins issue and revoke tokens on the
+admin page at `http://<server>:8080/admin/`.
+
+A token is a username (such as `dev_7f3k2m9q4x8w`) and a secret password.
+The password is shown once, when the token is created; only a SHA-256 hash
+of it is stored. Devices use it:
+
+- **over NATS**, as the user and password when connecting:
+  `nats://dev_7f3k2m9q4x8w:<secret>@<server>:4222`. A device may only send
+  requests to the API's request subjects and subscribe to its events.
+- **over HTTP**, as Basic auth on `/calendar`:
+  `curl -u dev_7f3k2m9q4x8w:<secret> http://<server>:8080/calendar`.
+
+Revoking a token takes effect immediately, and closes the NATS connections
+using it. `/healthz`, `/docs` and the admin page itself never need a token.
+
+### Setting it up
+
+You need the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started)
+and Docker. In this repository:
+
+```sh
+supabase start      # starts Postgres, Auth and the API; applies supabase/migrations
+supabase status     # shows the API URL and the secret key
+```
+
+Put the API URL and the secret key in `lcars.toml` (see
+`lcars.example.toml`), or in `LCARS_SUPABASE_URL` and
+`LCARS_SUPABASE_SECRET_KEY`. The secret key gives full access to the
+database, so keep it out of the repository and off the network.
+
+```toml
+[supabase]
+url = "http://127.0.0.1:54321"
+secret_key = "sb_secret_..."
+```
+
+Sign-ups are disabled, so create admin accounts yourself: in Supabase Studio
+(<http://127.0.0.1:54323>, **Authentication > Add user**, with **Auto Confirm
+User** checked), or with the Auth admin API:
+
+```sh
+curl -X POST http://127.0.0.1:54321/auth/v1/admin/users \
+  -H "apikey: $SECRET_KEY" -H "Authorization: Bearer $SECRET_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"<a long password>","email_confirm":true}'
+```
+
+Then build the admin page into the binary (`make build`, or `make admin-ui`
+before `make run`; the Docker image includes it), start lcars-api, open
+`/admin/`, sign in, and create a token for each display.
+
+If Supabase is down when lcars-api starts, lcars-api still starts, refuses
+devices, and keeps retrying; tokens already loaded keep working through later
+outages. Tokens deleted directly in the database (rather than on the admin
+page) stop working within `supabase.refresh_interval`.
+
+Device tokens are checked by the embedded NATS server. If you use an external
+NATS server (`nats.url`), secure it with its own authentication.
+
+The admin page is a React and TypeScript app in [`admin/`](admin/), built
+with Vite (in Docker) into `internal/adminui/dist` and embedded in the
+binary. For live editing, run lcars-api on port 8080 and `npm run dev` in
+`admin/`.
+
 ## Cameras
 
-[`eufy/`](eufy/) is a separate process that logs into an Eufy account and
-serves live camera video and stored snapshots over HTTP on this machine. It
-is not part of the lcars-api server. The account email and password are read
-from [`eufy/.env`](eufy/.env.example), which is gitignored. See
-[`eufy/README.md`](eufy/README.md). `make eufy` type-checks and tests it.
+Live video comes from the [Eufy proxy](eufy/README.md), a separate process on
+this machine. Point lcars-api at it with `eufy.url` (or `LCARS_EUFY_URL`),
+for example `http://127.0.0.1:3000`. Leave that unset and the camera
+endpoints answer `503`. Devices talk only to lcars-api. The proxy has no
+authentication of its own and should stay on localhost.
+
+A device lists cameras with `lcars.cameras.list` or `GET /cameras`. Each
+camera includes `stream_path` and `snapshot_path`, which are paths on this
+server:
+
+- `GET /cameras/{sn}/stream` is the live video, Annex-B bytes
+  (`video/octet-stream`). The response stays open until the device closes
+  it, and closing it stops that viewer. It is not cut off by the 15 second
+  write timeout.
+- `GET /cameras/{sn}/snapshot` is the latest stored JPEG. A miss is `404`
+  and does not wake the camera.
+
+Both need a device token when authentication is on. The video is not sent
+over NATS. Serials are letters and digits. There is no pan, tilt, or other
+control.
+
+`make eufy` type-checks and tests the proxy without an Eufy account.
 
 ## NATS API
 
-Devices connect to `nats://<server>:4222`. Every message body is a protobuf
-message from [`proto/lcars/v1`](proto/lcars/v1/calendar.proto), which documents
-each field.
+Devices connect to `nats://<server>:4222`, with their device token as the
+user and password if [authentication](#devices-and-the-admin-page) is on.
+Every message body is a protobuf
+message from [`proto/lcars/v1`](proto/lcars/v1), which documents each field.
 
 | Subject                  | Kind          | Body                                         |
 |--------------------------|---------------|----------------------------------------------|
 | `lcars.calendar.get`     | request/reply | `GetCalendarRequest` → `GetCalendarResponse`. See [Calendar](#calendar). |
 | `lcars.calendar.updated` | event         | `CalendarUpdated`, published when the `.ics` files change. Request the calendar again when you get one. |
+| `lcars.cameras.list`     | request/reply | `ListCamerasRequest` → `ListCamerasResponse`. See [Cameras](#cameras). An empty body is the whole request. |
 
 - **Errors.** A failed request gets a reply with an empty body and two
   headers: `Nats-Service-Error-Code`, an HTTP-style status (`400` for an
@@ -94,6 +188,7 @@ let calendar = v1::GetCalendarResponse::decode(reply.payload)?;
 [`rust/examples/agenda.rs`](rust/examples/agenda.rs) is a complete client
 using [async-nats](https://github.com/nats-io/nats.rs). It prints the
 calendar, and with `--watch` prints it again on every `lcars.calendar.updated`.
+It takes a device token from `NATS_USER` and `NATS_PASSWORD`.
 
 Go types are in [`gen/go/lcars/v1`](gen/go/lcars/v1) (package `lcarsv1`).
 Any other language can generate its own from `proto/`.
@@ -105,9 +200,16 @@ Full HTTP reference: run the server and open <http://localhost:8080/docs>.
 | Method | Path            | Description                                       |
 |--------|-----------------|---------------------------------------------------|
 | GET    | `/healthz`      | Health check. Returns `status`, `version` and `nats` (the NATS connection state); `503` while NATS is disconnected. |
-| GET    | `/calendar`     | JSON version of `lcars.calendar.get`. See [Calendar](#calendar). |
+| GET    | `/calendar`     | JSON version of `lcars.calendar.get`. See [Calendar](#calendar). Needs a device token (Basic auth) when authentication is on. |
+| GET    | `/cameras`     | JSON version of `lcars.cameras.list`. See [Cameras](#cameras). Needs a device token when authentication is on. |
+| GET    | `/cameras/{sn}/stream` | Live Annex-B video for that camera. Stays open until the client closes it. Needs a device token when authentication is on. |
+| GET    | `/cameras/{sn}/snapshot` | Latest stored JPEG for that camera. `404` does not wake it. Needs a device token when authentication is on. |
 | GET    | `/openapi.json` | OpenAPI 3.1 document for the HTTP API.            |
 | GET    | `/docs`         | HTTP API reference ([Redoc](https://github.com/Redocly/redoc)) rendered from `/openapi.json`. |
+| GET    | `/admin/`       | The [admin page](#devices-and-the-admin-page).    |
+| POST   | `/admin/api/session` | Admin sign-in: email and password for an access token. |
+| GET, POST | `/admin/api/tokens` | List device tokens, or create one (the response has its secret). Needs an admin access token (Bearer). |
+| DELETE | `/admin/api/tokens/{id}` | Revoke a device token. Needs an admin access token. |
 
 The OpenAPI document is hand-written in `internal/server/api/openapi.json` and
 embedded in the binary; `info.version` is filled in with the build version when
@@ -205,6 +307,10 @@ startup.
 | `nats.tls_key`              | `LCARS_NATS_TLS_KEY`              | unset            | PEM private key matching `nats.tls_cert` |
 | `nats.tls_hosts`            | `LCARS_NATS_TLS_HOSTS`            | unset            | Comma-separated DNS names and IPs that must be in the certificate SAN. When `tls_cert` is unset, a CA and certificate are created in `nats.tls_dir` on first start and reused. Delete that directory to mint a new CA |
 | `nats.tls_dir`              | `LCARS_NATS_TLS_DIR`              | unset            | Directory for the generated `ca.pem`, `ca.key`, `server.pem` and `server.key`. Devices trust `ca.pem` |
+| `supabase.url`              | `LCARS_SUPABASE_URL`              | unset (no auth)  | Supabase API URL, e.g. `http://127.0.0.1:54321`. Turns on device authentication and the admin page. Set with `supabase.secret_key` |
+| `supabase.secret_key`       | `LCARS_SUPABASE_SECRET_KEY`       | unset            | Supabase secret key (`sb_secret_...`) or legacy `service_role` key. Keep it secret |
+| `supabase.refresh_interval` | `LCARS_SUPABASE_REFRESH_INTERVAL` | `1m`             | How often to re-read device tokens, to pick up changes made directly in the database. Minimum `1s` |
+| `eufy.url`              | `LCARS_EUFY_URL`                  | unset (disabled) | Base URL of the Eufy camera proxy, e.g. `http://127.0.0.1:3000`. No path and no credentials. See [Cameras](#cameras) |
 
 ## Docker
 
@@ -221,7 +327,11 @@ docker run -d -p 4222:4222 -p 8080:8080 \
 The image reads `/config/lcars.toml` if it is mounted. Paths inside the
 container differ from the host's, so set `LCARS_CALENDAR_DIR` to where the
 calendar directory is mounted. Set `LCARS_TIMEZONE` too, since the container
-doesn't know the host's timezone.
+doesn't know the host's timezone. The image includes the admin page. Inside a
+container, `127.0.0.1` is the container itself: reach a local Supabase at
+`http://host.docker.internal:54321` (Docker Desktop), or run the container on
+the `supabase_network_lcars-api` network and use
+`http://supabase_kong_lcars-api:8000`.
 
 ## Project layout
 
@@ -230,14 +340,19 @@ cmd/lcars-api/         main package: wiring, signal handling, graceful shutdown
 proto/lcars/v1/        protobuf definitions: the NATS API contract
 gen/go/lcars/v1/       generated Go types (make proto; don't edit)
 rust/                  lcars-proto crate: generated Rust types (rust/src/gen), subjects, example client
-internal/broker/       embedded NATS server, or connection to an external one
+internal/broker/       embedded NATS server (and its device authentication), or connection to an external one
 internal/natsapi/      NATS service: subjects and handlers
+internal/devices/      device tokens: create, revoke, and check credentials (cached in memory)
+internal/supabase/     minimal Supabase client: Auth sign-in and the device_tokens table
+internal/adminui/      the built admin page, embedded (make admin-ui)
 internal/calendar/     reads .ics files, expands recurring events, groups them by day
 internal/config/       config file and environment variables
 internal/server/       HTTP routes, handlers, middleware
 internal/server/api/   OpenAPI document and Redoc docs page (embedded)
+admin/                 admin page: React + TypeScript (Vite), with Playwright browser tests
 eufy/                  Eufy camera proxy: Node process using @mega-yfue/eufy-sdk
-e2e/                   black-box tests: binary, Docker image, Rust client
+supabase/              local Supabase config and migrations (supabase start)
+e2e/                   black-box tests: binary, Docker image, Rust client, admin page
 ```
 
 NATS endpoints are registered in one place, `addEndpoints` in
@@ -263,7 +378,8 @@ documented but not registered, and `make api-lint` validates the document.
 
 ```sh
 make test      # unit tests with the race detector
-make e2e       # end-to-end tests: binary, Docker image, Rust client
+make e2e       # end-to-end tests: binary, Docker image, Rust client, admin page
+make admin-ui  # type-check and build the admin page (via Docker)
 make rust      # Rust crate: fmt, clippy, tests, no_std build (via Docker)
 make eufy      # type-check and test the Eufy camera proxy (via Docker)
 make api-lint  # validate the OpenAPI document (Redocly CLI, via Docker)
@@ -292,28 +408,41 @@ tests it as a black box:
 - **Calendar:** fictional `.ics` fixtures in `e2e/testdata/calendars`
   (recurrence across a DST change, exceptions, overrides, a broken file) and
   live reloading as files change.
+- **Authentication and admin:** against the local Supabase: admin sign-in
+  and its failures, creating, listing and revoking device tokens (secrets
+  stored only as hashes, and never logged), Basic auth on HTTP and
+  user/password on NATS (with subject permissions), revocation closing NATS
+  connections, tokens deleted in the database, Supabase being down at
+  startup, and running without Supabase.
+- **Admin page:** Playwright drives the page in Chromium (in Docker) against
+  the image: sign-in, creating a token and using it, revoking it, and an
+  expired session.
 - **Docker:** builds the image and checks that the container runs as
   non-root, serves the calendar over NATS and HTTP from mounted files, and
   exits 0 on `docker stop`.
 - **Rust client:** builds `rust/examples/agenda.rs` in a Rust container and
-  runs it against the image over a Docker network: it must print the fixture
-  week, report a `400` error reply, and print the calendar again after a file
-  changes.
+  runs it against the image over a Docker network, with a device token: it
+  must print the fixture week, report a `400` error reply, fail without a
+  token, and print the calendar again after a file changes.
 
-The Docker and Rust client tests are skipped when no Docker daemon is
-running, unless `E2E_REQUIRE_DOCKER=1` is set (as in CI). The first Rust
+`make e2e` builds the admin page and starts the local Supabase first (so it
+needs the Supabase CLI), and sets `E2E_REQUIRE_DOCKER=1`, so nothing is
+skipped. Run directly with `go test`, the Docker, Supabase, Rust and browser
+tests are skipped when Docker or Supabase isn't running, unless
+`E2E_REQUIRE_DOCKER=1` is set (as in CI). The tests create their own admin
+accounts and tokens in the local Supabase and delete them afterwards. The first Rust
 client run takes a few minutes to compile; later runs reuse the build from
 named Docker volumes (`lcars-cargo-*`), shared with `make rust`.
 
 ## Tooling
 
-- **Dependencies:** kept minimal. Beyond the standard library: [nats-server](https://github.com/nats-io/nats-server) (embedded) and [nats.go](https://github.com/nats-io/nats.go) for NATS, [protobuf-go](https://github.com/protocolbuffers/protobuf-go) for messages, [BurntSushi/toml](https://github.com/BurntSushi/toml) for the config file, and [emersion/go-ical](https://github.com/emersion/go-ical) with [teambition/rrule-go](https://github.com/teambition/rrule-go) for parsing `.ics` files and expanding recurring events. The Rust crate depends only on [prost](https://github.com/tokio-rs/prost). The Eufy camera proxy in `eufy/` is a separate Node process. It reads the account from a gitignored `.env` file, and its tests run in the Node image.
+- **Dependencies:** kept minimal. Supabase is reached over its HTTP API with the standard library. Beyond the standard library: [nats-server](https://github.com/nats-io/nats-server) (embedded) and [nats.go](https://github.com/nats-io/nats.go) for NATS, [protobuf-go](https://github.com/protocolbuffers/protobuf-go) for messages, [BurntSushi/toml](https://github.com/BurntSushi/toml) for the config file, and [emersion/go-ical](https://github.com/emersion/go-ical) with [teambition/rrule-go](https://github.com/teambition/rrule-go) for parsing `.ics` files and expanding recurring events. The Rust crate depends only on [prost](https://github.com/tokio-rs/prost). The admin page uses React, built with Vite and TypeScript, and tested with Playwright; npm runs in Docker with pinned versions. The Eufy camera proxy in `eufy/` is a separate Node process, also tested in that image.
 - **Protobuf:** [Buf](https://buf.build) (`buf.yaml`, `buf.gen.yaml`), run in Docker, lints `proto/` and generates Go (protoc-gen-go) and Rust (prost) code with pinned plugin versions.
 - **Lint and format:** [golangci-lint](https://golangci-lint.run) v2 (`.golangci.yml`), with gofumpt and goimports.
 - **API docs:** OpenAPI 3.1, linted with [Redocly CLI](https://redocly.com/docs/cli) (`redocly.yaml`) and rendered with Redoc at `/docs`.
 - **Vulnerability scan:** `govulncheck`, pinned in `go.mod` as a tool and run with `go tool govulncheck`.
 - **Container image:** multi-stage `Dockerfile` that produces a static binary on distroless `nonroot`.
-- **CI:** GitHub Actions runs tests (with `-race`), lint, OpenAPI and protobuf lint, a check that generated code is current, the Rust crate checks, the Eufy proxy tests, govulncheck and the e2e suite, including the Docker image and the Rust client. Dependabot keeps Go modules, Rust crates, Actions and base images up to date.
+- **CI:** GitHub Actions runs tests (with `-race`), lint, OpenAPI and protobuf lint, a check that generated code is current, the Rust crate checks, the Eufy proxy tests, govulncheck and the e2e suite, including the Docker image, the Rust client and the admin page against a local Supabase. Dependabot keeps Go modules, Rust crates, npm packages, Actions and base images up to date.
 
 ## Contributing
 

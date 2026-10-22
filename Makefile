@@ -8,9 +8,10 @@ BUF     := bufbuild/buf:1.74.0
 RUST    := rust:1.99.0-slim
 # A bare-metal target, to check the Rust crate builds without std.
 NO_STD_TARGET := thumbv7em-none-eabihf
-
-# Same Node as eufy/Dockerfile. @mega-yfue/eufy-sdk requires Node >= 24.5.
+# Also in the Dockerfile (NODE_VERSION).
 NODE    := node:24.22.1-slim
+# Must match @playwright/test in admin/package.json. Also used by the e2e tests.
+PLAYWRIGHT := mcr.microsoft.com/playwright:v1.64.1-noble
 
 DOCKER_BUF = docker run --rm -v "$(CURDIR):/workspace" -w /workspace $(BUF)
 # Cargo in Docker, with the toolchain components, crate downloads and build
@@ -20,6 +21,12 @@ DOCKER_CARGO = docker run --rm -v "$(CURDIR)/rust:/src" -w /src \
 	-v lcars-cargo-registry:/usr/local/cargo/registry \
 	-v lcars-cargo-target:/target -e CARGO_TARGET_DIR=/target \
 	$(RUST)
+# npm in Docker for the admin page, with node_modules and the npm cache in
+# named volumes. The build writes to internal/adminui/dist.
+DOCKER_NPM = docker run --rm -v "$(CURDIR)/admin:/src/admin" \
+	-v "$(CURDIR)/internal/adminui/dist:/src/internal/adminui/dist" \
+	-v lcars-admin-node-modules:/src/admin/node_modules -v lcars-npm-cache:/root/.npm \
+	-w /src/admin $(NODE)
 
 .DEFAULT_GOAL := help
 
@@ -32,7 +39,7 @@ run: ## Run the server locally with human-readable logs
 	LCARS_LOG_FORMAT=text go run ./cmd/$(BINARY)
 
 .PHONY: build
-build: ## Build a static binary into bin/
+build: admin-ui ## Build a static binary into bin/, with the admin page
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/$(BINARY)
 
 .PHONY: test
@@ -40,10 +47,15 @@ test: ## Run tests with the race detector
 	go test -race ./...
 
 .PHONY: e2e
-e2e: ## Run end-to-end tests: binary, Docker image, Rust client
-	go test -tags e2e -count=1 -v ./e2e/...
+e2e: admin-ui supabase ## Run end-to-end tests: binary, Docker image, Rust client, admin page
+	E2E_REQUIRE_DOCKER=1 go test -tags e2e -count=1 -v ./e2e/...
 
-# npm for the Eufy proxy. node_modules stays in a volume.
+.PHONY: admin-ui
+admin-ui: ## Type-check and build the admin page into the binary's embedded files (needs Docker)
+	find internal/adminui/dist -mindepth 1 ! -name .gitkeep -delete
+	$(DOCKER_NPM) sh -c 'npm ci --no-audit --no-fund && npm run build'
+
+# npm for the Eufy proxy. node_modules stays in a volume, as with the admin page.
 DOCKER_EUFY = docker run --rm -v "$(CURDIR)/eufy:/src/eufy" \
 	-v lcars-eufy-node-modules:/src/eufy/node_modules -v lcars-npm-cache:/root/.npm \
 	-w /src/eufy $(NODE)
@@ -51,6 +63,10 @@ DOCKER_EUFY = docker run --rm -v "$(CURDIR)/eufy:/src/eufy" \
 .PHONY: eufy
 eufy: ## Type-check and test the Eufy camera proxy (needs Docker)
 	$(DOCKER_EUFY) sh -c 'npm ci --no-audit --no-fund && npm run typecheck && npm test'
+
+.PHONY: supabase
+supabase: ## Start the local Supabase stack, if it isn't running (needs the Supabase CLI and Docker)
+	@supabase start > /dev/null && echo "Supabase is running; \`supabase status\` shows its URL and keys."
 
 .PHONY: cover
 cover: ## Run tests and open an HTML coverage report

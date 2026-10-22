@@ -4,6 +4,8 @@ package broker
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net"
@@ -31,10 +33,27 @@ type Broker struct {
 	closed chan struct{}  // closed once Conn is closed
 }
 
+// Auth makes the embedded NATS server require credentials from devices.
+type Auth struct {
+	// Check reports whether a device's user and password are valid.
+	Check func(user, password string) bool
+	// Publish and Subscribe are the subjects devices may publish and
+	// subscribe to (wildcards allowed).
+	Publish, Subscribe []string
+}
+
+// serviceUser is the user lcars-api itself connects to the embedded server
+// as. Its password is random for each run.
+const serviceUser = "lcars-api"
+
 // Start connects to cfg.URL if set. Otherwise it starts an embedded NATS
 // server listening on cfg.Addr and connects to it in-process. The connection
 // reconnects forever if it drops; Close stops it.
-func Start(cfg config.NATS, logger *slog.Logger) (*Broker, error) {
+//
+// If auth is non-nil, the embedded server only accepts devices that pass
+// auth.Check. It does not apply to an external server, which has its own
+// authentication.
+func Start(cfg config.NATS, auth *Auth, logger *slog.Logger) (*Broker, error) {
 	b := &Broker{closed: make(chan struct{})}
 	opts := []nats.Option{
 		nats.Name("lcars-api"),
@@ -56,8 +75,14 @@ func Start(cfg config.NATS, logger *slog.Logger) (*Broker, error) {
 	}
 
 	serverURL := cfg.URL
-	if serverURL == "" {
-		ns, err := startServer(cfg, logger)
+	switch {
+	case serverURL == "":
+		var a *authenticator
+		if auth != nil {
+			a = newAuthenticator(*auth)
+			opts = append(opts, nats.UserInfo(serviceUser, a.servicePassword))
+		}
+		ns, err := startServer(cfg, a, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -67,7 +92,14 @@ func Start(cfg config.NATS, logger *slog.Logger) (*Broker, error) {
 		clientURL := ns.ClientURL()
 		serverURL = inProcessURL(clientURL)
 		opts = append(opts, nats.InProcessServer(ns))
-		logger.Info("nats server listening", "addr", ns.Addr().String(), "tls", strings.HasPrefix(clientURL, "tls://"))
+		logger.Info("nats server listening",
+			"addr", ns.Addr().String(),
+			"auth", auth != nil,
+			"tls", strings.HasPrefix(clientURL, "tls://"),
+		)
+	case auth != nil:
+		logger.Warn("device tokens are not checked by an external NATS server (nats.url); " +
+			"configure authentication on that server")
 	}
 
 	nc, err := nats.Connect(serverURL, opts...)
@@ -103,6 +135,21 @@ func (b *Broker) Close(ctx context.Context) error {
 	return err
 }
 
+// Disconnect closes the embedded server's connections from user, such as a
+// device whose token was revoked. It does nothing for an external server.
+func (b *Broker) Disconnect(user string) {
+	if b.server == nil {
+		return
+	}
+	conns, err := b.server.Connz(&server.ConnzOptions{User: user, Username: true})
+	if err != nil {
+		return
+	}
+	for _, c := range conns.Conns {
+		_ = b.server.DisconnectClientByID(c.Cid) // fails only if already gone
+	}
+}
+
 // inProcessURL rewrites a tls ClientURL to nats. The embedded server's
 // in-process pipe speaks the plaintext NATS handshake; network clients
 // still use tls:// and the certificate.
@@ -113,9 +160,45 @@ func inProcessURL(raw string) string {
 	return raw
 }
 
+// authenticator checks the credentials of clients of the embedded server.
+type authenticator struct {
+	auth            Auth
+	servicePassword string
+	devicePerms     *server.Permissions
+}
+
+func newAuthenticator(auth Auth) *authenticator {
+	return &authenticator{
+		auth:            auth,
+		servicePassword: rand.Text() + rand.Text(), // 260 bits
+		devicePerms: &server.Permissions{
+			Publish:   &server.SubjectPermission{Allow: auth.Publish},
+			Subscribe: &server.SubjectPermission{Allow: auth.Subscribe},
+		},
+	}
+}
+
+// Check implements server.Authentication.
+func (a *authenticator) Check(c server.ClientAuthentication) bool {
+	opts := c.GetOpts()
+	switch {
+	case opts.Username == serviceUser:
+		if subtle.ConstantTimeCompare([]byte(opts.Password), []byte(a.servicePassword)) != 1 {
+			return false
+		}
+		c.RegisterUser(&server.User{Username: serviceUser}) // no restrictions
+		return true
+	case a.auth.Check(opts.Username, opts.Password):
+		c.RegisterUser(&server.User{Username: opts.Username, Permissions: a.devicePerms})
+		return true
+	}
+	return false
+}
+
 // startServer runs an embedded NATS server on cfg.Addr ("host:port"; port 0
-// picks a free one) and waits until it accepts clients.
-func startServer(cfg config.NATS, logger *slog.Logger) (*server.Server, error) {
+// picks a free one) and waits until it accepts clients. If auth is non-nil,
+// clients must pass it.
+func startServer(cfg config.NATS, auth *authenticator, logger *slog.Logger) (*server.Server, error) {
 	certFile, keyFile, err := prepareTLS(cfg, logger)
 	if err != nil {
 		return nil, err
@@ -132,7 +215,7 @@ func startServer(cfg config.NATS, logger *slog.Logger) (*server.Server, error) {
 		port = server.RANDOM_PORT // 0 would mean the default port, 4222
 	}
 
-	opts := &server.Options{
+	sopts := &server.Options{
 		ServerName: "lcars-api",
 		Host:       host,
 		Port:       port,
@@ -146,10 +229,13 @@ func startServer(cfg config.NATS, logger *slog.Logger) (*server.Server, error) {
 		if err != nil {
 			return nil, fmt.Errorf("nats tls: %w", err)
 		}
-		opts.TLSConfig = tlsConfig
-		opts.TLSTimeout = 2
+		sopts.TLSConfig = tlsConfig
+		sopts.TLSTimeout = 2
 	}
-	ns, err := server.NewServer(opts)
+	if auth != nil {
+		sopts.CustomClientAuthentication = auth
+	}
+	ns, err := server.NewServer(sopts)
 	if err != nil {
 		return nil, fmt.Errorf("start NATS server: %w", err)
 	}

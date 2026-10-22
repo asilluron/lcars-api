@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"errors"
 	"log/slog"
 	"net"
 	"strings"
@@ -33,7 +34,7 @@ func echo(t *testing.T, b *Broker, nc *nats.Conn) {
 }
 
 func TestEmbedded(t *testing.T) {
-	b, err := Start(config.NATS{Addr: "127.0.0.1:0"}, discard)
+	b, err := Start(config.NATS{Addr: "127.0.0.1:0"}, nil, discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,6 +60,88 @@ func TestEmbedded(t *testing.T) {
 	}
 }
 
+func TestEmbeddedAuth(t *testing.T) {
+	auth := &Auth{
+		Check:     func(user, password string) bool { return user == "dev_a" && password == "secret-a" },
+		Publish:   []string{"test.get"},
+		Subscribe: []string{"test.updated", "_INBOX.>"},
+	}
+	b, err := Start(config.NATS{Addr: "127.0.0.1:0"}, auth, discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.Close(t.Context()) }()
+	url := "nats://" + b.server.Addr().String()
+
+	// The service's own connection is unrestricted.
+	sub, err := b.Conn.Subscribe("test.get", func(m *nats.Msg) { _ = m.Respond([]byte("ok")) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sub.Unsubscribe() }()
+	if err := b.Conn.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, opts := range map[string][]nats.Option{
+		"no credentials":          nil,
+		"wrong password":          {nats.UserInfo("dev_a", "wrong")},
+		"unknown user":            {nats.UserInfo("dev_b", "secret-a")},
+		"service user":            {nats.UserInfo(serviceUser, "guess")},
+		"service user, no secret": {nats.UserInfo(serviceUser, "")},
+	} {
+		if nc, err := nats.Connect(url, opts...); err == nil {
+			nc.Close()
+			t.Errorf("%s: connected, want an authorization error", name)
+		} else if !errors.Is(err, nats.ErrAuthorization) {
+			t.Errorf("%s: err = %v, want an authorization error", name, err)
+		}
+	}
+
+	permErrs := make(chan error, 10)
+	closed := make(chan struct{})
+	device, err := nats.Connect(url, nats.UserInfo("dev_a", "secret-a"), nats.NoReconnect(),
+		nats.ErrorHandler(func(_ *nats.Conn, _ *nats.Subscription, err error) { permErrs <- err }),
+		nats.ClosedHandler(func(*nats.Conn) { close(closed) }))
+	if err != nil {
+		t.Fatalf("device connect: %v", err)
+	}
+	defer device.Close()
+	if msg, err := device.Request("test.get", nil, 5*time.Second); err != nil || string(msg.Data) != "ok" {
+		t.Fatalf("device request = %v, %v; want ok", msg, err)
+	}
+
+	// Devices may not publish or subscribe outside their permissions.
+	if err := device.Publish("test.updated", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := device.SubscribeSync("test.secret"); err != nil {
+		t.Fatal(err)
+	}
+	_ = device.Flush()
+	for range 2 {
+		select {
+		case err := <-permErrs:
+			if !errors.Is(err, nats.ErrPermissionViolation) {
+				t.Errorf("err = %v, want a permissions violation", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("no permissions violation reported")
+		}
+	}
+
+	// Disconnect closes the device's connections, and not the service's.
+	b.Disconnect("dev_a")
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("device still connected after Disconnect")
+	}
+	if !b.Conn.IsConnected() {
+		t.Error("service connection closed by Disconnect")
+	}
+}
+
 func TestEmbeddedPortInUse(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -66,7 +149,7 @@ func TestEmbeddedPortInUse(t *testing.T) {
 	}
 	defer l.Close()
 
-	_, err = Start(config.NATS{Addr: l.Addr().String()}, discard)
+	_, err = Start(config.NATS{Addr: l.Addr().String()}, nil, discard)
 	if err == nil || !strings.Contains(err.Error(), "address already in use") {
 		t.Errorf("Start = %v, want an address in use error", err)
 	}
@@ -85,7 +168,7 @@ func TestExternal(t *testing.T) {
 
 	// Addr must be ignored: nothing may listen on it.
 	unused := freeAddr(t)
-	b, err := Start(config.NATS{URL: ns.ClientURL(), Addr: unused}, discard)
+	b, err := Start(config.NATS{URL: ns.ClientURL(), Addr: unused}, nil, discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +190,7 @@ func TestExternal(t *testing.T) {
 }
 
 func TestExternalUnreachable(t *testing.T) {
-	_, err := Start(config.NATS{URL: "nats://user:hunter2@" + freeAddr(t)}, discard)
+	_, err := Start(config.NATS{URL: "nats://user:hunter2@" + freeAddr(t)}, nil, discard)
 	if err == nil {
 		t.Fatal("Start: want error for unreachable server")
 	}

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -305,8 +306,11 @@ func TestNATSService(t *testing.T) {
 	for _, ep := range info.Endpoints {
 		endpoints = append(endpoints, ep.Subject)
 	}
-	if strings.Join(endpoints, ",") != subjectCalendarGet {
-		t.Errorf("endpoints = %v, want [%s]", endpoints, subjectCalendarGet)
+	want := []string{subjectCalendarGet, subjectCamerasList}
+	slices.Sort(endpoints)
+	slices.Sort(want)
+	if !slices.Equal(endpoints, want) {
+		t.Errorf("endpoints = %v, want %v", endpoints, want)
 	}
 }
 

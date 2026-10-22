@@ -35,6 +35,9 @@ go.work.sum
 # Build output
 bin/
 rust/target/
+# The admin page, built by `make admin-ui`. .gitkeep lets Go build without it.
+internal/adminui/dist/*
+!internal/adminui/dist/.gitkeep
 
 # Local config: copy lcars.example.toml to lcars.toml. Never commit it.
 lcars.toml

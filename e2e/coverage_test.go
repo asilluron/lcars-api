@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -67,7 +68,7 @@ func checkCoverage() int {
 	var missing []string
 	for kind, names := range want {
 		for _, name := range names {
-			if !covered[kind][name] {
+			if !isCovered(kind, name) {
 				missing = append(missing, kind+" "+name)
 			}
 		}
@@ -79,6 +80,26 @@ func checkCoverage() int {
 	fmt.Fprintf(os.Stderr, "\ne2e: FAIL: not exercised by any e2e test (every route, subject and setting must be):\n  %s\n",
 		strings.Join(missing, "\n  "))
 	return 1
+}
+
+// isCovered reports whether name was used. A documented path with
+// parameters, such as /admin/api/tokens/{id}, is covered by any path it
+// matches. coverageMu must be held.
+func isCovered(kind, name string) bool {
+	if covered[kind][name] {
+		return true
+	}
+	if kind != pathCoverage || !strings.Contains(name, "{") {
+		return false
+	}
+	pattern := regexp.MustCompile(`\\{[^/]+\\}`).ReplaceAllString(regexp.QuoteMeta(name), `[^/]+`)
+	re := regexp.MustCompile("^" + pattern + "$")
+	for used := range covered[kind] {
+		if re.MatchString(used) {
+			return true
+		}
+	}
+	return false
 }
 
 // documentedPaths lists the paths in the OpenAPI document.

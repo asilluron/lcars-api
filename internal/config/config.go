@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -47,7 +48,34 @@ type Config struct {
 
 	Calendar Calendar
 	NATS     NATS
+	Supabase Supabase
+	Eufy     Eufy
 }
+
+// Eufy is the camera proxy (the eufy/ process). When URL is set, devices can
+// list cameras and open their live video through this server.
+type Eufy struct {
+	// URL is the proxy's base URL, such as "http://127.0.0.1:3000", or ""
+	// to disable cameras.
+	URL string
+}
+
+// Supabase configures the database that stores device tokens and the admin
+// users who manage them. When URL is set, devices must authenticate with a
+// token and the admin page is enabled.
+type Supabase struct {
+	// URL is the project's API URL, such as "http://127.0.0.1:54321", or ""
+	// to disable authentication and the admin page.
+	URL string
+	// SecretKey is the project's secret key (or legacy service_role key).
+	SecretKey string
+	// RefreshInterval is how often device tokens are re-read, to pick up
+	// changes made directly in the database.
+	RefreshInterval time.Duration
+}
+
+// Enabled reports whether Supabase is configured.
+func (s Supabase) Enabled() bool { return s.URL != "" }
 
 // NATS configures the NATS connection the API is served on.
 type NATS struct {
@@ -172,6 +200,38 @@ var settings = []setting{
 		c.NATS.TLSDir = path
 		return nil
 	}},
+	{"supabase.url", "LCARS_SUPABASE_URL", func(c *Config, v, _ string) error {
+		u, err := url.Parse(v)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("want an http(s) URL like http://127.0.0.1:54321, got %q", v)
+		}
+		if u.User != nil {
+			return errors.New("must not contain credentials; set supabase.secret_key instead")
+		}
+		c.Supabase.URL = strings.TrimSuffix(v, "/")
+		return nil
+	}},
+	{"supabase.secret_key", "LCARS_SUPABASE_SECRET_KEY", func(c *Config, v, _ string) error {
+		c.Supabase.SecretKey = v
+		return nil
+	}},
+	{"supabase.refresh_interval", "LCARS_SUPABASE_REFRESH_INTERVAL", func(c *Config, v, _ string) error {
+		return parseDuration(&c.Supabase.RefreshInterval, v, time.Second)
+	}},
+	{"eufy.url", "LCARS_EUFY_URL", func(c *Config, v, _ string) error {
+		u, err := url.Parse(v)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("want an http(s) URL like http://127.0.0.1:3000, got %q", v)
+		}
+		if u.User != nil {
+			return errors.New("must not contain credentials")
+		}
+		if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+			return errors.New("want a base URL with no path, such as http://127.0.0.1:3000")
+		}
+		c.Eufy.URL = strings.TrimSuffix(v, "/")
+		return nil
+	}},
 }
 
 // EnvVars returns the environment variable of every setting.
@@ -203,6 +263,9 @@ func Load(getenv func(string) string) (Config, error) {
 		},
 		NATS: NATS{
 			Addr: ":4222",
+		},
+		Supabase: Supabase{
+			RefreshInterval: time.Minute,
 		},
 	}
 
@@ -236,6 +299,10 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if err := cfg.NATS.validate(); err != nil {
 		return Config{}, fmt.Errorf("nats: %w", err)
+	}
+	if (cfg.Supabase.URL == "") != (cfg.Supabase.SecretKey == "") {
+		return Config{}, errors.New("supabase.url and supabase.secret_key (LCARS_SUPABASE_URL, " +
+			"LCARS_SUPABASE_SECRET_KEY) must be set together")
 	}
 	return cfg, nil
 }

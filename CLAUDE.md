@@ -16,9 +16,17 @@ exports), and serves it to the device.
   exports the generated types, subject names and error header names, and must
   keep working without `std` (microcontrollers).
 - **HTTP runs alongside** for `/healthz` (which also reports the NATS
-  connection), the docs, and JSON versions of the NATS endpoints.
+  connection), the docs, JSON versions of the NATS endpoints, and the admin
+  page.
+- **Devices authenticate with device tokens** when Supabase is configured
+  (`supabase.url`): Basic auth over HTTP, user/password on the embedded NATS
+  server. Admins issue and revoke tokens on the admin page (`admin/`, React +
+  TypeScript, embedded via `internal/adminui`), signing in with Supabase
+  Auth. Tokens live in a local Supabase (`supabase/`), reached through
+  `internal/supabase`; `internal/devices` caches them in memory for checks.
 
-Neither NATS nor HTTP is authenticated; it is meant only for a trusted LAN.
+Without Supabase nothing is authenticated, and there is never TLS: the API is
+meant only for a trusted LAN.
 
 ## This is a public, open-source project
 
@@ -33,7 +41,9 @@ description, test fixture, and code comment as public.
   (`/Users/<name>/...`, `/home/<name>/...`), hostnames, LAN IP addresses,
   Wi-Fi names, device serial numbers.
 - Secrets: API keys, tokens, passwords, private URLs (including private
-  calendar feed URLs), even in tests or examples.
+  calendar feed URLs), even in tests or examples. This includes the Supabase
+  secret key and device token secrets; e2e tests read the local key from
+  `supabase status` at run time and must never write it into the repo.
 - `lcars.toml`, the local config file. It is gitignored. Only
   `lcars.example.toml` is committed, and it must contain placeholders only.
 
@@ -56,10 +66,23 @@ user rather than trying to fix history yourself.
 
 ## Security expectations
 
-The API has no authentication, so:
+Authentication is optional (off without Supabase), so:
 
-- Endpoints and subjects are read-only. Don't add HTTP endpoints or NATS
-  handlers that write files, run commands, or change the host.
+- Device endpoints and NATS subjects are read-only. Don't add HTTP endpoints
+  or NATS handlers that write files, run commands, or change the host.
+- The admin API (`/admin/api/...`) is the only place that changes anything,
+  and it only manages device tokens in Supabase. Every admin operation except
+  sign-in must go through `requireAdmin`; every device endpoint through
+  `requireDevice` (HTTP) or the broker's authenticator (NATS). New NATS
+  subjects must be in `natsapi.Requests` or `natsapi.Events`, which define
+  what devices may publish and subscribe to.
+- Device token secrets are shown once and never stored or logged: only
+  their SHA-256 is kept. Never log the Supabase secret key, access tokens or
+  admin emails (log the admin's user ID instead).
+- Database changes are new files in `supabase/migrations/` (never edit one
+  that has been applied). Tables get row-level security and no grants to
+  `anon` or `authenticated`: only lcars-api, with the secret key, may touch
+  them. Keep sign-ups disabled in `supabase/config.toml`.
 - Never build a filesystem path from request input. Directories come only
   from the operator's config. Read them through `os.Root` (as
   `internal/calendar` does) so nothing escapes the configured directory.
@@ -89,9 +112,17 @@ Unit tests are welcome in addition, never instead.
   types, and check error replies (headers) as well as success.
 - If the change affects what a Rust client sees, extend `TestRustClient`
   (`e2e/rust_test.go`) or `rust/examples/agenda.rs` so the Rust side is
-  tested too. If it affects the container, extend `TestDockerImage`.
-- Run `make e2e` (with Docker running) before calling work done, and report
-  the result. A skipped Docker test is not a pass.
+  tested too. If it affects the container, extend `TestDockerImage`. If it
+  affects the admin page, extend the Playwright tests in `admin/e2e/` (run
+  by `TestAdminUI`). If it affects authentication, cover both HTTP and NATS,
+  and both with and without Supabase.
+- Tests that need Supabase use the local stack (`requireSupabase`) and
+  create their own admins and tokens (`createAdmin`, `createToken`), cleaning
+  up after themselves; never depend on or delete data they didn't create.
+- Run `make e2e` (with Docker running and the Supabase CLI installed) before
+  calling work done, and report the result. It builds the admin page, starts
+  Supabase, and fails rather than skips if something is missing. A skipped
+  test is not a pass.
 
 ## Conventions
 
@@ -112,6 +143,8 @@ Unit tests are welcome in addition, never instead.
 - HTTP routes are all registered in `addRoutes` in
   `internal/server/server.go`. Handlers return `error`; see
   `internal/server/handler.go`.
+- Talk to Supabase over its HTTP API from `internal/supabase` (standard
+  library only); don't add a Postgres driver or Supabase SDK to the server.
 - Every HTTP route must be documented in `internal/server/api/openapi.json`.
   `TestRoutesMatchOpenAPI` enforces this, and `make api-lint` validates the
   document. The rendered docs are served at `/docs`.
@@ -132,6 +165,33 @@ Unit tests are welcome in addition, never instead.
   integers (Unix seconds for times) over well-known types that pull in
   `prost-types`. The Rust crate must build with `--no-default-features` for
   a bare-metal target; `make rust` checks.
+### Admin page
+
+- The admin page is plain React + TypeScript (strict) built with Vite: no UI
+  framework, router or state library. It calls the admin API with relative
+  URLs (`api/...`), so it works under `/admin/`. The server's
+  Content-Security-Policy allows only same-origin scripts and styles, so no
+  inline scripts, CDNs or external fonts.
+- npm runs only in Docker (`make admin-ui`, `make eufy`), with exact versions
+  in `admin/package.json` and `eufy/package.json` and committed lockfiles.
+  The `PLAYWRIGHT` image in the Makefile must match `@playwright/test`
+  (`TestAdminUI` checks), and `NODE` in the Makefile must match
+  `NODE_VERSION` in the Dockerfile.
+- The build output (`internal/adminui/dist`) is not committed.
+
+### Cameras
+
+- The Eufy proxy is a separate Node process in `eufy/`. It is not part of
+  the distroless image. When `eufy.url` is set, lcars-api proxies it to
+  devices: `lcars.cameras.list` and `GET /cameras` publish the catalog, and
+  `GET /cameras/{sn}/stream` and `GET /cameras/{sn}/snapshot` proxy the
+  bytes. Video does not go over NATS. The stream handler clears the 15s
+  read and write deadlines. `make eufy` type-checks and tests the proxy
+  without an Eufy account. Account credentials live in `eufy/.env` (see
+  `eufy/.env.example`); that file and the session stay out of git.
+
+### Settings
+
 - Every setting is available both in the config file and as an `LCARS_*`
   environment variable (env wins). Add new settings to the `settings` table
   in `internal/config/config.go` **and** to `lcars.example.toml`;
@@ -140,21 +200,15 @@ Unit tests are welcome in addition, never instead.
 - New behavior gets unit tests and e2e tests; see "End-to-end tests are
   required" above.
 
-### Cameras
-
-- The Eufy proxy is a separate Node process in `eufy/`. It is not part of the
-  Go server, NATS, or the distroless image. `make eufy` type-checks and tests
-  it without an Eufy account. Account credentials live in `eufy/.env` (see
-  `eufy/.env.example`); that file and the session stay out of git.
-
 ## Commands
 
 ```sh
-make check     # everything CI runs: tidy, fmt, lint, api-lint, proto, test, rust, eufy, vuln, e2e
+make check     # everything CI runs: tidy, fmt, lint, api-lint, proto, test, rust, vuln, e2e
 make test      # unit tests with -race
-make e2e       # end-to-end tests (binary, Docker image, Rust client)
+make e2e       # end-to-end tests (binary, Docker image, Rust client, admin page; starts Supabase)
+make admin-ui  # type-check and build the admin page (Docker)
+make supabase  # start the local Supabase stack (Supabase CLI)
 make proto     # lint proto/ and regenerate Go and Rust code (Docker)
 make rust      # Rust crate: fmt, clippy, tests, no_std build (Docker)
-make eufy      # type-check and test the Eufy camera proxy (Docker)
 make run       # run locally with text logs; reads ./lcars.toml if present
 ```
