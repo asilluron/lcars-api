@@ -78,7 +78,7 @@ func TestAdminUI(t *testing.T) {
 		t.Fatalf("playwright: %v\n%s\nserver logs:\n%s", err, out.String(), docker(t, "logs", server))
 	}
 	t.Logf("playwright:\n%s", out.String())
-	if !strings.Contains(out.String(), "4 passed") {
-		t.Errorf("want 4 Playwright tests to pass:\n%s", out.String())
+	if !strings.Contains(out.String(), "5 passed") {
+		t.Errorf("want 5 Playwright tests to pass:\n%s", out.String())
 	}
 }

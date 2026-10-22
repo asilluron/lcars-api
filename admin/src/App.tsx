@@ -2,12 +2,17 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type R
 
 import {
   ApiError,
+  createReminder,
   createToken,
+  deleteReminder,
+  listReminders,
   listTokens,
   revokeToken,
   signIn,
+  type Accent,
   type DeviceToken,
   type NewDeviceToken,
+  type Reminder,
   type Session,
 } from "./api";
 
@@ -54,7 +59,7 @@ export function App() {
 
   return (
     <Frame
-      title={session ? "Device access" : "Admin sign-in"}
+      title={session ? "Admin" : "Admin sign-in"}
       actions={
         session && (
           <>
@@ -69,7 +74,10 @@ export function App() {
       }
     >
       {session ? (
-        <TokensPage session={session} onExpired={() => signOut("Your session has expired. Sign in again.")} />
+        <>
+          <TokensPage session={session} onExpired={() => signOut("Your session has expired. Sign in again.")} />
+          <RemindersPage session={session} onExpired={() => signOut("Your session has expired. Sign in again.")} />
+        </>
       ) : (
         <SignIn notice={notice} onSignIn={onSignIn} />
       )}
@@ -305,6 +313,181 @@ function NewTokenCard({ token, onDone }: { token: NewDeviceToken; onDone: () => 
         Done
       </button>
     </section>
+  );
+}
+
+const accents: { value: Accent; label: string }[] = [
+  { value: "purple", label: "Purple" },
+  { value: "blue", label: "Blue" },
+  { value: "orange", label: "Orange" },
+  { value: "peach", label: "Peach" },
+];
+
+function RemindersPage({ session, onExpired }: { session: Session; onExpired: () => void }) {
+  const [reminders, setReminders] = useState<Reminder[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = useCallback(
+    async <T,>(call: () => Promise<T>): Promise<T | undefined> => {
+      setError(null);
+      try {
+        return await call();
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) onExpired();
+        else setError(err instanceof Error ? err.message : String(err));
+        return undefined;
+      }
+    },
+    [onExpired],
+  );
+
+  const refresh = useCallback(async () => {
+    const list = await run(() => listReminders(session.access_token));
+    if (list) setReminders(list.reminders);
+  }, [run, session.access_token]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const onCreate = async (title: string, detail: string, accent: Accent) => {
+    const created = await run(() => createReminder(session.access_token, { title, detail, accent }));
+    if (!created) return false;
+    await refresh();
+    return true;
+  };
+
+  const onRemove = async (reminder: Reminder) => {
+    if (!window.confirm(`Remove "${reminder.title}"?`)) return;
+    const ok = await run(async () => {
+      await deleteReminder(session.access_token, reminder.id);
+      return true;
+    });
+    if (!ok) return;
+    await refresh();
+  };
+
+  return (
+    <>
+      {error && (
+        <p className="message error" role="alert">
+          {error}
+        </p>
+      )}
+      <CreateReminder onCreate={onCreate} />
+      <section className="panel" aria-labelledby="reminders-heading" data-testid="reminders">
+        <h2 id="reminders-heading">Reminders</h2>
+        <p className="muted">The display lists these, oldest first, up to six. A tap on the display marks one done.</p>
+        {reminders === null ? (
+          <p className="muted">Loading…</p>
+        ) : reminders.length === 0 ? (
+          <p className="muted">No reminders yet.</p>
+        ) : (
+          <ReminderTable reminders={reminders} onRemove={onRemove} />
+        )}
+      </section>
+    </>
+  );
+}
+
+function CreateReminder({
+  onCreate,
+}: {
+  onCreate: (title: string, detail: string, accent: Accent) => Promise<boolean>;
+}) {
+  const [title, setTitle] = useState("");
+  const [detail, setDetail] = useState("");
+  const [accent, setAccent] = useState<Accent>("purple");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    if (await onCreate(title.trim(), detail.trim(), accent)) {
+      setTitle("");
+      setDetail("");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <section className="panel" aria-labelledby="add-reminder-heading">
+      <h2 id="add-reminder-heading">New reminder</h2>
+      <form onSubmit={submit} className="row">
+        <label className="grow">
+          Title
+          <input
+            required
+            maxLength={80}
+            placeholder="Bring in recycling bin"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </label>
+        <label className="grow">
+          Detail
+          <input
+            maxLength={120}
+            placeholder="Due today · House"
+            value={detail}
+            onChange={(e) => setDetail(e.target.value)}
+          />
+        </label>
+        <label>
+          Accent
+          <select value={accent} onChange={(e) => setAccent(e.target.value as Accent)}>
+            {accents.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" className="pill" disabled={busy || title.trim() === ""}>
+          {busy ? "Adding…" : "Add reminder"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function ReminderTable({ reminders, onRemove }: { reminders: Reminder[]; onRemove: (reminder: Reminder) => void }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Title</th>
+            <th scope="col">Detail</th>
+            <th scope="col">Accent</th>
+            <th scope="col">State</th>
+            <th scope="col">
+              <span className="visually-hidden">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {reminders.map((reminder) => (
+            <tr key={reminder.id} data-testid={`reminder-${reminder.id}`}>
+              <td className="name">{reminder.title}</td>
+              <td data-label="Detail">{reminder.detail}</td>
+              <td data-label="Accent">{reminder.accent}</td>
+              <td data-label="State">{reminder.done ? "Done" : "Open"}</td>
+              <td className="actions">
+                <button
+                  type="button"
+                  className="pill pill-small pill-danger"
+                  onClick={() => onRemove(reminder)}
+                  aria-label={`Remove ${reminder.title}`}
+                >
+                  Remove
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

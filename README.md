@@ -149,12 +149,16 @@ message from [`proto/lcars/v1`](proto/lcars/v1), which documents each field.
 | `lcars.calendar.get`     | request/reply | `GetCalendarRequest` → `GetCalendarResponse`. See [Calendar](#calendar). |
 | `lcars.calendar.updated` | event         | `CalendarUpdated`, published when the `.ics` files change. Request the calendar again when you get one. |
 | `lcars.cameras.list`     | request/reply | `ListCamerasRequest` → `ListCamerasResponse`. See [Cameras](#cameras). An empty body is the whole request. |
+| `lcars.reminders.list`   | request/reply | `ListRemindersRequest` → `ListRemindersResponse`. See [Reminders](#reminders). An empty body is the whole request. |
+| `lcars.reminders.set`    | request/reply | `SetReminderRequest` → `ListRemindersResponse`, the list after marking one reminder done or open. |
+| `lcars.reminders.updated` | event        | `RemindersUpdated`, published when a reminder is added, removed, or marked done or open. Request the list again when you get one. |
 | `lcars.training.put`     | request/reply | `PutTrainingAudioRequest` → `PutTrainingAudioResponse`. See [Training audio](#training-audio). |
 
 - **Errors.** A failed request gets a reply with an empty body and two
   headers: `Nats-Service-Error-Code`, an HTTP-style status (`400` for an
-  invalid request, `503` if the data source isn't configured, `500` for
-  anything else), and `Nats-Service-Error`, a message.
+  invalid request, `404` if a reminder id is not in the list, `503` if the
+  data source isn't configured, `500` for anything else), and
+  `Nats-Service-Error`, a message.
 - **Discovery.** The API is a standard [NATS service](https://github.com/nats-io/nats.go/tree/main/micro)
   named `lcars`, so it answers `$SRV.PING.lcars`, `$SRV.INFO.lcars` (version
   and endpoints) and `$SRV.STATS.lcars`.
@@ -205,12 +209,16 @@ Full HTTP reference: run the server and open <http://localhost:8080/docs>.
 | GET    | `/cameras`     | JSON version of `lcars.cameras.list`. See [Cameras](#cameras). Needs a device token when authentication is on. |
 | GET    | `/cameras/{sn}/stream` | Live Annex-B video for that camera. Stays open until the client closes it. Needs a device token when authentication is on. |
 | GET    | `/cameras/{sn}/snapshot` | Latest stored JPEG for that camera. `404` does not wake it. Needs a device token when authentication is on. |
+| GET    | `/reminders`    | JSON version of `lcars.reminders.list`. See [Reminders](#reminders). Needs a device token when authentication is on. |
+| POST   | `/reminders/{id}` | JSON version of `lcars.reminders.set`: mark that reminder done or open. Needs a device token when authentication is on. |
 | GET    | `/openapi.json` | OpenAPI 3.1 document for the HTTP API.            |
 | GET    | `/docs`         | HTTP API reference ([Redoc](https://github.com/Redocly/redoc)) rendered from `/openapi.json`. |
 | GET    | `/admin/`       | The [admin page](#devices-and-the-admin-page).    |
 | POST   | `/admin/api/session` | Admin sign-in: email and password for an access token. |
 | GET, POST | `/admin/api/tokens` | List device tokens, or create one (the response has its secret). Needs an admin access token (Bearer). |
 | DELETE | `/admin/api/tokens/{id}` | Revoke a device token. Needs an admin access token. |
+| GET, POST | `/admin/api/reminders` | List reminders, or add one. Needs an admin access token. |
+| DELETE | `/admin/api/reminders/{id}` | Remove a reminder. Needs an admin access token. |
 
 The OpenAPI document is hand-written in `internal/server/api/openapi.json` and
 embedded in the binary; `info.version` is filled in with the build version when
@@ -282,6 +290,49 @@ finds that files were added, removed or changed, the server publishes
 into that directory, or have a scheduled job (cron, launchd) download your
 calendars' `.ics` feeds into it.
 
+## Reminders
+
+`lcars.reminders.list` (NATS) and `GET /reminders` (HTTP) serve the to-do list
+stored in Supabase. Both return the same reminders, oldest first, at most
+six. Over NATS, `updated_at_unix` is Unix seconds; the JSON field is
+`updated_at`, an RFC 3339 timestamp. An empty NATS body is a valid list
+request. An empty list has the zero time.
+
+```sh
+curl localhost:8080/reminders
+```
+
+```json
+{
+  "updated_at": "2030-03-04T12:00:00Z",
+  "reminders": [
+    {
+      "id": "rem_7f3k2m9q4x8w",
+      "title": "Bring in recycling bin",
+      "detail": "Due today · House",
+      "accent": "purple",
+      "done": false
+    }
+  ]
+}
+```
+
+- `accent` is `purple`, `blue`, `orange`, or `peach`, matching the display.
+- A device marks one done or open with `lcars.reminders.set`, or
+  `POST /reminders/{id}` and `{"done": true}`. The reply is the whole list.
+  The id is a lookup key, not a path.
+- Admins add and remove reminders on the admin page (`POST` and `DELETE`
+  `/admin/api/reminders`). Adding needs a title of 1 to 80 characters, an
+  optional detail of at most 120 characters, and an optional accent (purple
+  if omitted).
+- Each change publishes `lcars.reminders.updated`. Request the list again
+  when one arrives.
+
+Reminders are on when Supabase is configured (`supabase.url` and
+`supabase.secret_key`) and off otherwise. With it off, the endpoints answer
+`503`. The rows live in the `reminders` table; only lcars-api, using the
+secret key, reads and writes them.
+
 ## Training audio
 
 `lcars.training.put` accepts chunks of microphone audio and appends them to
@@ -329,7 +380,7 @@ startup.
 | `nats.tls_key`              | `LCARS_NATS_TLS_KEY`              | unset            | PEM private key matching `nats.tls_cert` |
 | `nats.tls_hosts`            | `LCARS_NATS_TLS_HOSTS`            | unset            | Comma-separated DNS names and IPs that must be in the certificate SAN. When `tls_cert` is unset, a CA and certificate are created in `nats.tls_dir` on first start and reused. Delete that directory to mint a new CA |
 | `nats.tls_dir`              | `LCARS_NATS_TLS_DIR`              | unset            | Directory for the generated `ca.pem`, `ca.key`, `server.pem` and `server.key`. Devices trust `ca.pem` |
-| `supabase.url`              | `LCARS_SUPABASE_URL`              | unset (no auth)  | Supabase API URL, e.g. `http://127.0.0.1:54321`. Turns on device authentication and the admin page. Set with `supabase.secret_key` |
+| `supabase.url`              | `LCARS_SUPABASE_URL`              | unset (no auth)  | Supabase API URL, e.g. `http://127.0.0.1:54321`. Turns on device authentication, the admin page, and reminders. Set with `supabase.secret_key` |
 | `supabase.secret_key`       | `LCARS_SUPABASE_SECRET_KEY`       | unset            | Supabase secret key (`sb_secret_...`) or legacy `service_role` key. Keep it secret |
 | `supabase.refresh_interval` | `LCARS_SUPABASE_REFRESH_INTERVAL` | `1m`             | How often to re-read device tokens, to pick up changes made directly in the database. Minimum `1s` |
 | `eufy.url`              | `LCARS_EUFY_URL`                  | unset (disabled) | Base URL of the Eufy camera proxy, e.g. `http://127.0.0.1:3000`. No path and no credentials. See [Cameras](#cameras) |
@@ -365,9 +416,10 @@ rust/                  lcars-proto crate: generated Rust types (rust/src/gen), s
 internal/broker/       embedded NATS server (and its device authentication), or connection to an external one
 internal/natsapi/      NATS service: subjects and handlers
 internal/devices/      device tokens: create, revoke, and check credentials (cached in memory)
-internal/supabase/     minimal Supabase client: Auth sign-in and the device_tokens table
+internal/supabase/     minimal Supabase client: Auth sign-in, device tokens, and reminders
 internal/adminui/      the built admin page, embedded (make admin-ui)
 internal/calendar/     reads .ics files, expands recurring events, groups them by day
+internal/reminders/    the to-do list, stored in Supabase
 internal/training/     appends training PCM to hourly WAV files under training.dir
 internal/config/       config file and environment variables
 internal/server/       HTTP routes, handlers, middleware
@@ -432,6 +484,10 @@ tests it as a black box:
 - **Calendar:** fictional `.ics` fixtures in `e2e/testdata/calendars`
   (recurrence across a DST change, exceptions, overrides, a broken file) and
   live reloading as files change.
+- **Reminders:** add and remove on the admin API, list and mark done over
+  HTTP and NATS (the two match), `lcars.reminders.updated` on each change,
+  the list surviving a restart, validation and a full list, and
+  authentication on and off (reminders are off without Supabase).
 - **Authentication and admin:** against the local Supabase: admin sign-in
   and its failures, creating, listing and revoking device tokens (secrets
   stored only as hashes, and never logged), Basic auth on HTTP and
@@ -439,8 +495,8 @@ tests it as a black box:
   connections, tokens deleted in the database, Supabase being down at
   startup, and running without Supabase.
 - **Admin page:** Playwright drives the page in Chromium (in Docker) against
-  the image: sign-in, creating a token and using it, revoking it, and an
-  expired session.
+  the image: sign-in, creating a token and using it, revoking it, an
+  expired session, and adding and removing a reminder.
 - **Docker:** builds the image and checks that the container runs as
   non-root, serves the calendar over NATS and HTTP from mounted files, and
   exits 0 on `docker stop`.
