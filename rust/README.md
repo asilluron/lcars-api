@@ -36,12 +36,15 @@ let client = async_nats::ConnectOptions::new()
 ```
 
 `examples/agenda.rs` is a complete client using [async-nats]. It reads the
-token from `NATS_USER` and `NATS_PASSWORD`:
+token from `NATS_USER` and `NATS_PASSWORD`. `examples/training.rs` sends one
+chunk of microphone PCM to `lcars.training.put` and prints how many bytes the
+server stored:
 
 ```sh
 export NATS_USER=dev_7f3k2m9q4x8w NATS_PASSWORD=...              # if the server needs a token
 cargo run --example agenda -- nats://192.0.2.10:4222            # next 7 days
 cargo run --example agenda -- nats://192.0.2.10:4222 2030-03-04 3 --watch
+cargo run --example training -- nats://192.0.2.10:4222          # one PCM chunk
 ```
 
 [prost]: https://github.com/tokio-rs/prost

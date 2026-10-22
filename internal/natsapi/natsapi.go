@@ -25,6 +25,7 @@ import (
 	"github.com/asilluron/lcars-api/internal/calendar"
 	"github.com/asilluron/lcars-api/internal/cameras"
 	"github.com/asilluron/lcars-api/internal/reminders"
+	"github.com/asilluron/lcars-api/internal/training"
 )
 
 // ServiceName is the NATS service name, for $SRV.PING.lcars and friends.
@@ -52,12 +53,16 @@ const (
 	// SubjectRemindersUpdated carries a RemindersUpdated event whenever a
 	// reminder is added, removed, or marked done or open.
 	SubjectRemindersUpdated = "lcars.reminders.updated"
+	// SubjectTrainingPut appends a chunk of microphone PCM to the training
+	// directory. It is the one subject that writes files, and only inside
+	// that directory.
+	SubjectTrainingPut = "lcars.training.put"
 )
 
 var (
 	// Requests lists the subjects the API answers requests on. Devices may
 	// publish to them.
-	Requests = []string{SubjectCalendarGet, SubjectCamerasList, SubjectRemindersList, SubjectRemindersSet}
+	Requests = []string{SubjectCalendarGet, SubjectCamerasList, SubjectRemindersList, SubjectRemindersSet, SubjectTrainingPut}
 	// Events lists the subjects the API publishes events to. Devices may
 	// subscribe to them.
 	Events = []string{SubjectCalendarUpdated, SubjectRemindersUpdated}
@@ -72,6 +77,7 @@ type Deps struct {
 	Calendar  *calendar.Store
 	Cameras   *cameras.Client
 	Reminders *reminders.Store
+	Training  *training.Writer
 }
 
 // Start registers the service on nc. version is the build version; it is
@@ -120,11 +126,19 @@ func addEndpoints(ctx context.Context, svc micro.Service, logger *slog.Logger, d
 		})); err != nil {
 		return err
 	}
-	return svc.AddEndpoint("reminders_set", handle(logger, remindersSet(ctx, deps.Reminders)),
+	if err := svc.AddEndpoint("reminders_set", handle(logger, remindersSet(ctx, deps.Reminders)),
 		micro.WithEndpointSubject(SubjectRemindersSet),
 		micro.WithEndpointMetadata(map[string]string{
 			"request":  "lcars.v1.SetReminderRequest",
 			"response": "lcars.v1.ListRemindersResponse",
+		})); err != nil {
+		return err
+	}
+	return svc.AddEndpoint("training_put", handle(logger, trainingPut(deps.Training, logger)),
+		micro.WithEndpointSubject(SubjectTrainingPut),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.PutTrainingAudioRequest",
+			"response": "lcars.v1.PutTrainingAudioResponse",
 		}))
 }
 

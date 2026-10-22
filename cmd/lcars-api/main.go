@@ -24,6 +24,7 @@ import (
 	"github.com/asilluron/lcars-api/internal/reminders"
 	"github.com/asilluron/lcars-api/internal/server"
 	"github.com/asilluron/lcars-api/internal/supabase"
+	"github.com/asilluron/lcars-api/internal/training"
 )
 
 func main() {
@@ -58,6 +59,18 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		}
 	} else {
 		logger.Info("calendar disabled: calendar.dir is not set")
+	}
+
+	var audio *training.Writer
+	if cfg.Training.Dir != "" {
+		audio, err = training.Open(cfg.Training.Dir, cfg.Training.MaxBytes, logger)
+		if err != nil {
+			return fmt.Errorf("open training directory: %w", err)
+		}
+		// Released on the way out, including when a later startup step fails.
+		defer func() { _ = audio.Close() }()
+	} else {
+		logger.Info("training disabled: training.dir is not set")
 	}
 
 	// Device tokens and reminders, when Supabase is configured. bus is set
@@ -123,6 +136,7 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		Calendar:  cal,
 		Cameras:   cams,
 		Reminders: reminderList,
+		Training:  audio,
 	})
 	if err != nil {
 		return err

@@ -152,6 +152,7 @@ message from [`proto/lcars/v1`](proto/lcars/v1), which documents each field.
 | `lcars.reminders.list`   | request/reply | `ListRemindersRequest` → `ListRemindersResponse`. See [Reminders](#reminders). An empty body is the whole request. |
 | `lcars.reminders.set`    | request/reply | `SetReminderRequest` → `ListRemindersResponse`, the list after marking one reminder done or open. |
 | `lcars.reminders.updated` | event        | `RemindersUpdated`, published when a reminder is added, removed, or marked done or open. Request the list again when you get one. |
+| `lcars.training.put`     | request/reply | `PutTrainingAudioRequest` → `PutTrainingAudioResponse`. See [Training audio](#training-audio). |
 
 - **Errors.** A failed request gets a reply with an empty body and two
   headers: `Nats-Service-Error-Code`, an HTTP-style status (`400` for an
@@ -332,6 +333,25 @@ Reminders are on when Supabase is configured (`supabase.url` and
 `503`. The rows live in the `reminders` table; only lcars-api, using the
 secret key, reads and writes them.
 
+## Training audio
+
+`lcars.training.put` accepts chunks of microphone audio and appends them to
+hourly WAV files (16 kHz, mono, 16-bit) in `training.dir`. This is how a
+device collects audio for wake-word training: while its `stream_all` flag is
+on, it sends every captured sample, about one second at a time. Leave
+`training.dir` unset and the subject answers `503`.
+
+The request is a `PutTrainingAudioRequest`. `pcm` is raw little-endian
+samples, not a WAV file, and must be non-empty, even-length, and at most
+256 KiB. `screen_id` is a label. The server names each file from its own
+clock, `YYYYMMDDTHH_<screen>.wav`, and keeps only a screen id made of letters,
+digits, `_` and `-` (anything else, including a path, is stored as `device`).
+Nothing in the request chooses a path. When the directory grows past
+`training.max_bytes` (32 GiB by default), the oldest hourly files are deleted.
+
+A week of continuous audio is about 19 GB. The flag on the device stays off
+until you turn it on.
+
 ## Configuration
 
 Settings come from a TOML config file and from environment variables, which
@@ -352,6 +372,8 @@ startup.
 | `timezone`                  | `LCARS_TIMEZONE`                  | host timezone    | IANA name, e.g. `Europe/Berlin`. Decides what "today" is and how event times are shown |
 | `calendar.dir`              | `LCARS_CALENDAR_DIR`              | unset (disabled) | Directory of `.ics` files. `~/` is expanded; a relative path in the file is relative to the file |
 | `calendar.refresh_interval` | `LCARS_CALENDAR_REFRESH_INTERVAL` | `1h`             | How often to re-read `calendar.dir`. Minimum `1s` |
+| `training.dir`              | `LCARS_TRAINING_DIR`              | unset (disabled) | Directory for hourly training WAV files. `~/` is expanded; a relative path in the file is relative to the file. The server exits if it is missing |
+| `training.max_bytes`        | `LCARS_TRAINING_MAX_BYTES`        | `34359738368`    | Delete the oldest hourly files once the directory grows past this many bytes (32 GiB). A week of 16 kHz mono is about 19 GB |
 | `nats.addr`                 | `LCARS_NATS_ADDR`                 | `:4222`          | Listen address of the embedded NATS server. Ignored when `nats.url` is set |
 | `nats.url`                  | `LCARS_NATS_URL`                  | unset (embedded) | Use an existing NATS server instead of the embedded one, e.g. `nats://192.0.2.10:4222` (comma-separate several). If it is unreachable at startup, the server exits; later it reconnects on its own |
 | `nats.tls_cert`             | `LCARS_NATS_TLS_CERT`             | unset            | PEM certificate for the embedded server. With `nats.tls_key`, clients use `tls://`. Ignored when `nats.url` is set |
@@ -398,6 +420,7 @@ internal/supabase/     minimal Supabase client: Auth sign-in, device tokens, and
 internal/adminui/      the built admin page, embedded (make admin-ui)
 internal/calendar/     reads .ics files, expands recurring events, groups them by day
 internal/reminders/    the to-do list, stored in Supabase
+internal/training/     appends training PCM to hourly WAV files under training.dir
 internal/config/       config file and environment variables
 internal/server/       HTTP routes, handlers, middleware
 internal/server/api/   OpenAPI document and Redoc docs page (embedded)
@@ -450,9 +473,10 @@ tests it as a black box:
 
 - **NATS:** the calendar over NATS matches the fixtures and the HTTP version
   field for field; error replies and headers; `lcars.calendar.updated` on
-  file changes, and only then; service discovery; concurrent clients; an
-  external NATS server that restarts (with `/healthz` reporting it and the
-  server reconnecting).
+  file changes, and only then; `lcars.training.put` writing hourly WAV files
+  (and rejecting a bad chunk, or answering 503 when no directory is set);
+  service discovery; concurrent clients; an external NATS server that
+  restarts (with `/healthz` reporting it and the server reconnecting).
 - **HTTP:** routing, JSON request logs, the docs and OpenAPI document.
 - **Process:** graceful shutdown on SIGTERM/SIGINT (HTTP and NATS ports
   closed), exit codes for bad config, a busy HTTP or NATS port, or an

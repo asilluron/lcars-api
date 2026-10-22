@@ -70,12 +70,15 @@ Authentication is optional (off without Supabase), so:
 
 - Device endpoints and NATS subjects are read-only, except marking a
   reminder done or open (`lcars.reminders.set` and `POST /reminders/{id}`),
-  which only changes that flag on an existing reminder in Supabase. The id
-  is a lookup key. Don't add other HTTP endpoints or NATS handlers that write
-  files, run commands, or change the host.
-- The admin API (`/admin/api/...`) is the only place that changes anything,
-  and it only manages device tokens in Supabase. Every admin operation except
-  sign-in must go through `requireAdmin`; every device endpoint through
+  which only changes that flag on an existing reminder in Supabase (the id
+  is a lookup key), and `lcars.training.put`, which appends PCM to hourly
+  WAV files inside the directory set by `training.dir`, under a file name
+  the server chooses. Don't add any other HTTP endpoint or NATS handler
+  that writes files, runs commands, or changes the host.
+- The admin API (`/admin/api/...`) is the only place that changes anything
+  else, and it only manages device tokens and reminders in Supabase. Every
+  admin operation except sign-in must go through `requireAdmin`; every
+  device endpoint through
   `requireDevice` (HTTP) or the broker's authenticator (NATS). New NATS
   subjects must be in `natsapi.Requests` or `natsapi.Events`, which define
   what devices may publish and subscribe to.
@@ -87,8 +90,9 @@ Authentication is optional (off without Supabase), so:
   `anon` or `authenticated`: only lcars-api, with the secret key, may touch
   them. Keep sign-ups disabled in `supabase/config.toml`.
 - Never build a filesystem path from request input. Directories come only
-  from the operator's config. Read them through `os.Root` (as
-  `internal/calendar` does) so nothing escapes the configured directory.
+  from the operator's config. Reach them through `os.Root` (as
+  `internal/calendar` and `internal/training` do) so nothing escapes the
+  configured directory. The training screen id is a label, not a path.
 - Don't log the contents of the user's data (event titles, file contents) at
   `info` level or above. Paths and counts are fine.
 - Return errors to clients through `*server.HTTPError` (HTTP) or
