@@ -107,7 +107,11 @@ func (w *Writer) append(name string, pcm []byte) error {
 	}
 	size := info.Size()
 	if size == 0 {
-		if _, err := f.Write(wavHeader(len(pcm))); err != nil {
+		header, err := wavHeader(len(pcm))
+		if err != nil {
+			return err
+		}
+		if _, err := f.Write(header); err != nil {
 			return fmt.Errorf("write training header: %w", err)
 		}
 		if _, err := f.Write(pcm); err != nil {
@@ -129,11 +133,16 @@ func (w *Writer) append(name string, pcm []byte) error {
 		return fmt.Errorf("write training audio: %w", err)
 	}
 	dataBytes := size + int64(len(pcm)) - wavHeaderBytes
-	if dataBytes < 0 || dataBytes > int64(^uint32(0)) {
+	data, err := uint32Size(dataBytes)
+	if err != nil {
 		return fmt.Errorf("training file %s is too large", name)
 	}
-	binary.LittleEndian.PutUint32(header[4:8], uint32(36+dataBytes))
-	binary.LittleEndian.PutUint32(header[40:44], uint32(dataBytes))
+	riff, err := uint32Size(dataBytes + 36)
+	if err != nil {
+		return fmt.Errorf("training file %s is too large", name)
+	}
+	binary.LittleEndian.PutUint32(header[4:8], riff)
+	binary.LittleEndian.PutUint32(header[40:44], data)
 	if _, err := f.WriteAt(header, 0); err != nil {
 		return fmt.Errorf("update training header: %w", err)
 	}
@@ -176,10 +185,18 @@ func (w *Writer) enforce() error {
 	return nil
 }
 
-func wavHeader(dataBytes int) []byte {
+func wavHeader(pcmBytes int) ([]byte, error) {
+	data, err := uint32Size(int64(pcmBytes))
+	if err != nil {
+		return nil, fmt.Errorf("pcm does not fit in a wav file: %w", err)
+	}
+	riff, err := uint32Size(int64(pcmBytes) + 36)
+	if err != nil {
+		return nil, fmt.Errorf("pcm does not fit in a wav file: %w", err)
+	}
 	header := make([]byte, wavHeaderBytes)
 	copy(header[0:4], "RIFF")
-	binary.LittleEndian.PutUint32(header[4:8], uint32(36+dataBytes))
+	binary.LittleEndian.PutUint32(header[4:8], riff)
 	copy(header[8:12], "WAVE")
 	copy(header[12:16], "fmt ")
 	binary.LittleEndian.PutUint32(header[16:20], 16)
@@ -190,8 +207,16 @@ func wavHeader(dataBytes int) []byte {
 	binary.LittleEndian.PutUint16(header[32:34], 2) // block align
 	binary.LittleEndian.PutUint16(header[34:36], 16)
 	copy(header[36:40], "data")
-	binary.LittleEndian.PutUint32(header[40:44], uint32(dataBytes))
-	return header
+	binary.LittleEndian.PutUint32(header[40:44], data)
+	return header, nil
+}
+
+// uint32Size converts a byte count into the uint32 a WAV header can store.
+func uint32Size(n int64) (uint32, error) {
+	if n < 0 || n > int64(^uint32(0)) {
+		return 0, fmt.Errorf("value %d does not fit in uint32", n)
+	}
+	return uint32(n), nil
 }
 
 func validHeader(header []byte) bool {

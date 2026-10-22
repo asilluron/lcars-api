@@ -1,6 +1,7 @@
 package natsapi
 
 import (
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -36,6 +37,20 @@ func trainingPut(w *training.Writer, logger *slog.Logger) handlerFunc {
 			logger.Error("store training audio", "err", err)
 			return nil, &Error{Code: 500, Msg: "Internal Server Error"}
 		}
-		return &lcarsv1.PutTrainingAudioResponse{AcceptedBytes: uint32(n)}, nil
+		accepted, err := acceptedBytes(n)
+		if err != nil {
+			logger.Error("store training audio", "err", err)
+			return nil, &Error{Code: 500, Msg: "Internal Server Error"}
+		}
+		return &lcarsv1.PutTrainingAudioResponse{AcceptedBytes: accepted}, nil
 	}
+}
+
+// acceptedBytes converts the stored byte count into the uint32 the reply carries.
+func acceptedBytes(n int) (uint32, error) {
+	wide := int64(n)
+	if wide < 0 || wide > int64(^uint32(0)) {
+		return 0, fmt.Errorf("accepted %d bytes", n)
+	}
+	return uint32(wide), nil
 }
