@@ -24,6 +24,7 @@ import (
 
 	"github.com/asilluron/lcars-api/internal/calendar"
 	"github.com/asilluron/lcars-api/internal/cameras"
+	"github.com/asilluron/lcars-api/internal/reminders"
 )
 
 // ServiceName is the NATS service name, for $SRV.PING.lcars and friends.
@@ -42,15 +43,24 @@ const (
 	// SubjectCamerasList answers a ListCamerasRequest with a
 	// ListCamerasResponse. The video itself is fetched over HTTP.
 	SubjectCamerasList = "lcars.cameras.list"
+	// SubjectRemindersList answers a ListRemindersRequest with a
+	// ListRemindersResponse.
+	SubjectRemindersList = "lcars.reminders.list"
+	// SubjectRemindersSet answers a SetReminderRequest with a
+	// ListRemindersResponse of the list after the change.
+	SubjectRemindersSet = "lcars.reminders.set"
+	// SubjectRemindersUpdated carries a RemindersUpdated event whenever a
+	// reminder is added, removed, or marked done or open.
+	SubjectRemindersUpdated = "lcars.reminders.updated"
 )
 
 var (
 	// Requests lists the subjects the API answers requests on. Devices may
 	// publish to them.
-	Requests = []string{SubjectCalendarGet, SubjectCamerasList}
+	Requests = []string{SubjectCalendarGet, SubjectCamerasList, SubjectRemindersList, SubjectRemindersSet}
 	// Events lists the subjects the API publishes events to. Devices may
 	// subscribe to them.
-	Events = []string{SubjectCalendarUpdated}
+	Events = []string{SubjectCalendarUpdated, SubjectRemindersUpdated}
 	// Subjects lists every subject the API answers requests on or publishes
 	// to.
 	Subjects = slices.Concat(Requests, Events)
@@ -59,8 +69,9 @@ var (
 // Deps are the data sources the handlers read from. A nil field makes the
 // endpoints that need it answer 503.
 type Deps struct {
-	Calendar *calendar.Store
-	Cameras  *cameras.Client
+	Calendar  *calendar.Store
+	Cameras   *cameras.Client
+	Reminders *reminders.Store
 }
 
 // Start registers the service on nc. version is the build version; it is
@@ -93,11 +104,27 @@ func addEndpoints(ctx context.Context, svc micro.Service, logger *slog.Logger, d
 		})); err != nil {
 		return err
 	}
-	return svc.AddEndpoint("cameras_list", handle(logger, camerasList(ctx, logger, deps.Cameras)),
+	if err := svc.AddEndpoint("cameras_list", handle(logger, camerasList(ctx, logger, deps.Cameras)),
 		micro.WithEndpointSubject(SubjectCamerasList),
 		micro.WithEndpointMetadata(map[string]string{
 			"request":  "lcars.v1.ListCamerasRequest",
 			"response": "lcars.v1.ListCamerasResponse",
+		})); err != nil {
+		return err
+	}
+	if err := svc.AddEndpoint("reminders_list", handle(logger, remindersList(ctx, deps.Reminders)),
+		micro.WithEndpointSubject(SubjectRemindersList),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.ListRemindersRequest",
+			"response": "lcars.v1.ListRemindersResponse",
+		})); err != nil {
+		return err
+	}
+	return svc.AddEndpoint("reminders_set", handle(logger, remindersSet(ctx, deps.Reminders)),
+		micro.WithEndpointSubject(SubjectRemindersSet),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.SetReminderRequest",
+			"response": "lcars.v1.ListRemindersResponse",
 		}))
 }
 

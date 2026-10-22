@@ -80,3 +80,33 @@ export function createToken(token: string, name: string): Promise<NewDeviceToken
 export function revokeToken(token: string, id: string): Promise<void> {
   return request("DELETE", `api/tokens/${encodeURIComponent(id)}`, { token });
 }
+
+export type Accent = "purple" | "blue" | "orange" | "peach";
+
+export interface Reminder {
+  id: string;
+  title: string;
+  detail: string;
+  accent: Accent;
+  done: boolean;
+}
+
+export interface ReminderList {
+  updated_at: string;
+  reminders: Reminder[];
+}
+
+export function listReminders(token: string): Promise<ReminderList> {
+  return request("GET", "api/reminders", { token });
+}
+
+export function createReminder(
+  token: string,
+  body: { title: string; detail: string; accent: Accent },
+): Promise<Reminder> {
+  return request("POST", "api/reminders", { token, body });
+}
+
+export function deleteReminder(token: string, id: string): Promise<void> {
+  return request("DELETE", `api/reminders/${encodeURIComponent(id)}`, { token });
+}

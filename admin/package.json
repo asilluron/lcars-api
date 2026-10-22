@@ -2,7 +2,7 @@
   "name": "lcars-admin",
   "private": true,
   "version": "0.0.0",
-  "description": "Admin page for lcars-api: manage device tokens.",
+  "description": "Admin page for lcars-api: manage device tokens and reminders.",
   "license": "MIT",
   "type": "module",
   "scripts": {

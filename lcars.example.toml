@@ -85,11 +85,12 @@
 # tls_dir = "/srv/lcars/nats-tls"
 
 [supabase]
-# Device tokens and the admins who manage them are stored in Supabase (a
-# local one started with `supabase start` in this repository). When these
-# are set, devices must authenticate with a token (HTTP Basic auth, or
-# user/password on NATS), and the admin page at /admin/ is enabled. Leave
-# them unset to run without authentication.
+# Device tokens, the admins who manage them, and the reminder list are stored
+# in Supabase (a local one started with `supabase start` in this repository).
+# When these are set, devices must authenticate with a token (HTTP Basic
+# auth, or user/password on NATS), the admin page at /admin/ is enabled, and
+# reminders can be added, removed, and marked done. Leave them unset to run
+# without authentication; reminders are off too.
 #
 # `supabase status` prints both values. The secret key grants full access to
 # the database: keep it in this file (which is gitignored) or the environment,

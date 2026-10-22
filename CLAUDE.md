@@ -68,8 +68,11 @@ user rather than trying to fix history yourself.
 
 Authentication is optional (off without Supabase), so:
 
-- Device endpoints and NATS subjects are read-only. Don't add HTTP endpoints
-  or NATS handlers that write files, run commands, or change the host.
+- Device endpoints and NATS subjects are read-only, except marking a
+  reminder done or open (`lcars.reminders.set` and `POST /reminders/{id}`),
+  which only changes that flag on an existing reminder in Supabase. The id
+  is a lookup key. Don't add other HTTP endpoints or NATS handlers that write
+  files, run commands, or change the host.
 - The admin API (`/admin/api/...`) is the only place that changes anything,
   and it only manages device tokens in Supabase. Every admin operation except
   sign-in must go through `requireAdmin`; every device endpoint through

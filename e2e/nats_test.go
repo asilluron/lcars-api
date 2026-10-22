@@ -29,8 +29,11 @@ import (
 // The subjects, spelled out rather than imported, so a change to them on the
 // server is caught here as a breaking change for clients.
 const (
-	subjectCalendarGet     = "lcars.calendar.get"
-	subjectCalendarUpdated = "lcars.calendar.updated"
+	subjectCalendarGet      = "lcars.calendar.get"
+	subjectCalendarUpdated  = "lcars.calendar.updated"
+	subjectRemindersList    = "lcars.reminders.list"
+	subjectRemindersSet     = "lcars.reminders.set"
+	subjectRemindersUpdated = "lcars.reminders.updated"
 )
 
 func connectNATS(t *testing.T, url string) *nats.Conn {
@@ -306,7 +309,7 @@ func TestNATSService(t *testing.T) {
 	for _, ep := range info.Endpoints {
 		endpoints = append(endpoints, ep.Subject)
 	}
-	want := []string{subjectCalendarGet, subjectCamerasList}
+	want := []string{subjectCalendarGet, subjectCamerasList, subjectRemindersList, subjectRemindersSet}
 	slices.Sort(endpoints)
 	slices.Sort(want)
 	if !slices.Equal(endpoints, want) {

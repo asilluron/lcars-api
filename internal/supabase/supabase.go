@@ -1,6 +1,6 @@
 // Package supabase is a minimal client for the parts of Supabase lcars-api
 // uses: Auth (to sign admins in and check their sessions) and the Data API
-// (PostgREST) for the device_tokens table.
+// (PostgREST) for the device_tokens and reminders tables.
 //
 // It authenticates with the project's secret key (or the legacy service_role
 // key), which bypasses row-level security, so it must only ever be used on
@@ -138,6 +138,85 @@ func (c *Client) DeleteDeviceToken(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return err
+}
+
+// Reminder is a row of the reminders table.
+type Reminder struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Detail    string    `json:"detail"`
+	Accent    string    `json:"accent"`
+	Done      bool      `json:"done"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+const remindersPath = "/rest/v1/reminders"
+
+// ListReminders returns every reminder, oldest first.
+func (c *Client) ListReminders(ctx context.Context) ([]Reminder, error) {
+	var rows []Reminder
+	err := c.do(ctx, http.MethodGet, remindersPath+"?select=id,title,detail,accent,done,created_at,updated_at&order=created_at.asc,id.asc", "", nil, &rows, nil)
+	return rows, err
+}
+
+// InsertReminder adds a reminder and returns the stored row.
+func (c *Client) InsertReminder(ctx context.Context, row Reminder) (Reminder, error) {
+	in := struct {
+		ID     string `json:"id"`
+		Title  string `json:"title"`
+		Detail string `json:"detail"`
+		Accent string `json:"accent"`
+		Done   bool   `json:"done"`
+	}{row.ID, row.Title, row.Detail, row.Accent, row.Done}
+	var rows []Reminder
+	err := c.do(ctx, http.MethodPost, remindersPath, "", in, &rows, http.Header{"Prefer": {"return=representation"}})
+	if apiErr, ok := errors.AsType[*apiError](err); ok && apiErr.status == http.StatusConflict {
+		return Reminder{}, ErrConflict
+	}
+	if err != nil {
+		return Reminder{}, err
+	}
+	if len(rows) != 1 {
+		return Reminder{}, fmt.Errorf("insert reminder: got %d rows back, want 1", len(rows))
+	}
+	return rows[0], nil
+}
+
+// UpdateReminderDone sets done on the reminder with id and returns the row.
+func (c *Client) UpdateReminderDone(ctx context.Context, id string, done bool) (Reminder, error) {
+	var rows []Reminder
+	err := c.do(ctx, http.MethodPatch, remindersPath+"?id=eq."+url.QueryEscape(id), "",
+		map[string]bool{"done": done}, &rows, http.Header{"Prefer": {"return=representation"}})
+	if err != nil {
+		return Reminder{}, err
+	}
+	if len(rows) == 0 {
+		return Reminder{}, ErrNotFound
+	}
+	return rows[0], nil
+}
+
+// DeleteReminder deletes the reminder with id, or returns ErrNotFound.
+func (c *Client) DeleteReminder(ctx context.Context, id string) error {
+	var rows []Reminder
+	err := c.do(ctx, http.MethodDelete, remindersPath+"?id=eq."+url.QueryEscape(id), "", nil, &rows,
+		http.Header{"Prefer": {"return=representation"}})
+	if err == nil && len(rows) == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// ResponseBody returns the body of a failed Supabase response, or "" when
+// err is not one. Callers use it to recognize a constraint message without
+// showing the body to a client.
+func ResponseBody(err error) string {
+	apiErr, ok := errors.AsType[*apiError](err)
+	if !ok {
+		return ""
+	}
+	return apiErr.body
 }
 
 // apiError is a non-2xx response. Its body is kept for the server log; it
