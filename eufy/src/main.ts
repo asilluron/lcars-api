@@ -25,9 +25,8 @@ async function main(): Promise<void> {
     process.once("SIGINT", resolve);
     process.once("SIGTERM", resolve);
   });
-  await new Promise<void>((resolve, reject) => {
-    server.close((err) => (err ? reject(err) : resolve()));
-  });
+  server.close();
+  server.closeAllConnections();
   await eufy.disconnect();
 }
 

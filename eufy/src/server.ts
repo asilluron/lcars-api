@@ -82,9 +82,26 @@ async function pipeStream(
   sn: string,
   res: ServerResponse,
 ): Promise<void> {
+  // Track if the client disconnects while we wait for the stream to open.
+  // We must register before openStream since that await can take seconds.
+  let aborted = false;
+  const onAbort = () => {
+    aborted = true;
+  };
+  res.on("close", onAbort);
+
   const readable = await source.openStream(sn);
+
+  res.off("close", onAbort);
+
   if (!readable) {
     sendJSON(res, 404, { error: "not found" });
+    return;
+  }
+
+  // Client disconnected while the camera was starting; clean up.
+  if (aborted) {
+    readable.destroy();
     return;
   }
 
