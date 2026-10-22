@@ -1,0 +1,9 @@
+node_modules
+.session
+.eufy-captcha.png
+.env
+.env.*
+!.env.example
+*.md
+Dockerfile
+.dockerignore

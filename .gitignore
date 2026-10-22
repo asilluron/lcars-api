@@ -41,3 +41,9 @@ lcars.toml
 
 # Generated NATS TLS material, including the private key.
 nats-tls/
+
+# Eufy proxy: installed modules, the persisted login, the local env file, and a captcha image.
+eufy/node_modules/
+eufy/.session/
+eufy/.env
+eufy/.eufy-captcha.png

@@ -57,6 +57,13 @@ jobs:
       - name: Rust crate (fmt, clippy, tests, no_std build)
         run: make rust
 
+  eufy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Eufy proxy (type-check and test)
+        run: make eufy
+
   e2e:
     runs-on: ubuntu-latest
     steps:
