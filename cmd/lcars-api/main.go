@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"slices"
 	"syscall"
+	"time"
 
 	"github.com/asilluron/lcars-api/internal/broker"
 	"github.com/asilluron/lcars-api/internal/calendar"
@@ -78,15 +79,22 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		bus    *broker.Broker
 		tokens *devices.Store
 		admins server.AdminAuth
+		labels server.CalendarLabelDB
 		auth   *broker.Auth
 	)
 	if cfg.Supabase.Enabled() {
 		db := supabase.New(cfg.Supabase.URL, cfg.Supabase.SecretKey)
 		admins = db
+		labels = db
 		tokens = devices.NewStore(db, logger, func(id string) { bus.Disconnect(id) })
 		if err := tokens.Load(ctx); err != nil {
 			// Keep going: Run retries, and until then devices are refused.
 			logger.Error("device tokens unavailable; devices are refused until they load", "err", err)
+		}
+		if cal != nil {
+			if _, err := server.ReloadCalendarLabels(ctx, db, cal); err != nil {
+				logger.Error("calendar labels unavailable", "err", err)
+			}
 		}
 		auth = &broker.Auth{
 			Check:     tokens.Check,
@@ -138,15 +146,21 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 	if tokens != nil {
 		go tokens.Run(ctx, cfg.Supabase.RefreshInterval)
 	}
+	if labels != nil && cal != nil {
+		go refreshCalendarLabels(ctx, cfg.Supabase.RefreshInterval, labels, cal,
+			natsapi.CalendarChanged(bus.Conn, logger), logger)
+	}
 
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: server.New(logger, server.Deps{
-			Calendar: cal,
-			Cameras:  cams,
-			NATS:     bus.Conn,
-			Devices:  tokens,
-			Admins:   admins,
+			Calendar:        cal,
+			Cameras:         cams,
+			NATS:            bus.Conn,
+			Devices:         tokens,
+			Admins:          admins,
+			Labels:          labels,
+			CalendarChanged: natsapi.CalendarChanged(bus.Conn, logger),
 		}),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		ReadTimeout:       cfg.ReadTimeout,
@@ -179,6 +193,32 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	return nil // the deferred functions stop the NATS service and broker
+}
+
+// refreshCalendarLabels re-reads labels until ctx is done, and publishes a
+// calendar update when they change, so a display picks up a name edited
+// directly in the database.
+func refreshCalendarLabels(ctx context.Context, every time.Duration, db server.CalendarLabelDB, store *calendar.Store, notify func(time.Time), logger *slog.Logger) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			changed, err := server.ReloadCalendarLabels(ctx, db, store)
+			if err != nil {
+				logger.ErrorContext(ctx, "calendar labels unavailable", "err", err)
+				continue
+			}
+			if changed {
+				logger.InfoContext(ctx, "calendar labels loaded")
+				if notify != nil {
+					notify(time.Now())
+				}
+			}
+		}
+	}
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {

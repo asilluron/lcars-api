@@ -211,6 +211,7 @@ Full HTTP reference: run the server and open <http://localhost:8080/docs>.
 | POST   | `/admin/api/session` | Admin sign-in: email and password for an access token. |
 | GET, POST | `/admin/api/tokens` | List device tokens, or create one (the response has its secret). Needs an admin access token (Bearer). |
 | DELETE | `/admin/api/tokens/{id}` | Revoke a device token. Needs an admin access token. |
+| GET, PUT | `/admin/api/calendars` | List calendars, or set the display name and category for one. Needs an admin access token. |
 
 The OpenAPI document is hand-written in `internal/server/api/openapi.json` and
 embedded in the binary; `info.version` is filled in with the build version when
@@ -247,6 +248,7 @@ curl 'localhost:8080/calendar?from=2026-10-20&days=7'
           "id": "4f0d7c1a@example.com/20261020T130000Z",
           "title": "Team standup",
           "calendar": "work",
+          "category": "",
           "location": "Video call",
           "all_day": false,
           "start": "2026-10-20T09:00:00-04:00",
@@ -270,10 +272,18 @@ curl 'localhost:8080/calendar?from=2026-10-20&days=7'
   occurrences. Times are converted to the configured `timezone`.
 
 To set it up, point `calendar.dir` in `lcars.toml` at a directory of `.ics`
-files. Subdirectories are read too. Each event's calendar name is the file's
-`X-WR-CALNAME` if set, otherwise its top-level subdirectory, otherwise the file
-name, so `family.ics` and `family/*.ics` both give a calendar called `family`.
-Files that can't be parsed are skipped with a warning in the log.
+files. Subdirectories are read too. Each event's calendar name is, in order, a
+name set for that calendar on the admin page; a short source from the file,
+such as the mailbox in a Google Calendar link (`ada` from `ada@example.com`)
+or `Gmail` when the file is a Google calendar without one; the file's
+`X-WR-CALNAME`; the top-level subdirectory; or the file name. So `family.ics`
+and `family/*.ics` both give a calendar called `family` when the file sets no
+source and no `X-WR-CALNAME`. The panel shows the first 8 characters.
+
+On the admin page, each calendar can also be given a category: `work`, `band`,
+`personal` or `house`. That is the lane the panel uses for the color and the
+filter. With no category, the panel chooses a lane from the name. Files that
+can't be parsed are skipped with a warning in the log.
 
 The directory is read at startup (the server won't start if it's missing) and
 again every `calendar.refresh_interval`, one hour by default. When a reload

@@ -17,6 +17,8 @@ type series struct {
 	title    string
 	location string
 	calendar string
+	// key is the stable id an admin label is stored under.
+	key string
 
 	start  time.Time
 	allDay bool
@@ -49,11 +51,18 @@ type parsed struct {
 	// replaced lists, by UID, occurrences of a recurring event that another
 	// VEVENT with a RECURRENCE-ID overrides or cancels.
 	replaced map[string][]time.Time
+	// calName is X-WR-CALNAME, the calendar's own title, or "".
+	calName string
+	// urls are the events' URL values, used to find a Google calendar mailbox.
+	urls []string
+	// google is set when an event UID is from Google (@google.com) but no
+	// mailbox could be read from a link.
+	google bool
 }
 
 // parse reads every VCALENDAR in r. Times without a timezone (floating times
-// and all-day dates) are interpreted in loc. calendar names the events'
-// calendar unless the file sets X-WR-CALNAME.
+// and all-day dates) are interpreted in loc. calendar is the fallback name
+// from the file's path; the caller replaces it with identity.
 func parse(r io.Reader, calendar string, loc *time.Location) (*parsed, error) {
 	out := &parsed{replaced: map[string][]time.Time{}}
 	dec := ical.NewDecoder(r)
@@ -65,12 +74,13 @@ func parse(r io.Reader, calendar string, loc *time.Location) (*parsed, error) {
 		if err != nil {
 			return nil, err
 		}
-		name := calendar
-		if v, err := cal.Props.Text("X-WR-CALNAME"); err == nil && strings.TrimSpace(v) != "" {
-			name = strings.TrimSpace(v)
+		if out.calName == "" {
+			if v, err := cal.Props.Text("X-WR-CALNAME"); err == nil && strings.TrimSpace(v) != "" {
+				out.calName = strings.TrimSpace(v)
+			}
 		}
 		for _, ev := range cal.Events() {
-			if err := out.add(ev, name, loc); err != nil {
+			if err := out.add(ev, calendar, loc); err != nil {
 				uid, _ := ev.Props.Text(ical.PropUID)
 				return nil, fmt.Errorf("event %q: %w", uid, err)
 			}
@@ -83,6 +93,12 @@ func (p *parsed) add(ev ical.Event, calendar string, loc *time.Location) error {
 	fixTimezones(ev.Component)
 
 	uid, _ := ev.Props.Text(ical.PropUID)
+	if prop := ev.Props.Get(ical.PropURL); prop != nil && prop.Value != "" {
+		p.urls = append(p.urls, prop.Value)
+	}
+	if strings.HasSuffix(strings.ToLower(uid), "@google.com") {
+		p.google = true
+	}
 	status, _ := ev.Status()
 	if rid := ev.Props.Get(ical.PropRecurrenceID); rid != nil && uid != "" {
 		t, err := rid.DateTime(loc)

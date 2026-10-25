@@ -257,7 +257,8 @@ label {
   text-transform: uppercase;
 }
 
-input {
+input,
+select {
   width: 100%;
   padding: 0.55rem 0.7rem;
   background: #000;
@@ -270,7 +271,8 @@ input {
   text-transform: none;
 }
 
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: none;
   border-color: var(--blue);
 }

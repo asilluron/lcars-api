@@ -24,11 +24,11 @@
     },
     {
       "name": "Calendar",
-      "description": "Events read from `.ics` files on the host.\n\nThe server reads every `.ics` file under the directory set by `calendar.dir` in the config file (or `LCARS_CALENDAR_DIR`), including subdirectories, and re-reads it every `calendar.refresh_interval` (default one hour). Recurring events are expanded, including exceptions (`EXDATE`) and edited or cancelled occurrences (`RECURRENCE-ID`). A file that can't be parsed is skipped and logged on the server; the rest are still served.\n\nEach event belongs to a calendar, named by the file's `X-WR-CALNAME` if set, otherwise by the top-level subdirectory the file is in, otherwise by the file name without `.ics`. So both `calendars/family.ics` and `calendars/family/*.ics` give a calendar named `family`."
+      "description": "Events read from `.ics` files on the host.\n\nThe server reads every `.ics` file under the directory set by `calendar.dir` in the config file (or `LCARS_CALENDAR_DIR`), including subdirectories, and re-reads it every `calendar.refresh_interval` (default one hour). Recurring events are expanded, including exceptions (`EXDATE`) and edited or cancelled occurrences (`RECURRENCE-ID`). A file that can't be parsed is skipped and logged on the server; the rest are still served.\n\nEach event belongs to a calendar. The name is a name set for that calendar on the admin page, if one is set; otherwise a short source taken from the file, such as the mailbox in a Google Calendar link (`ada` from `ada@example.com`) or `Gmail` when the file is a Google calendar without a personal mailbox; otherwise the file's `X-WR-CALNAME`; otherwise the top-level subdirectory; otherwise the file name without `.ics`. So both `calendars/family.ics` and `calendars/family/*.ics` give a calendar named `family` when the file sets no source and no `X-WR-CALNAME`.\n\n`category`, when set on the admin page, is `work`, `band`, `personal` or `house`. It is empty when the calendar has no category."
     },
     {
       "name": "Admin",
-      "description": "The admin page, and the API it uses to manage device tokens. Enabled only when Supabase is configured; otherwise every admin API operation answers `503`.\n\nA device token's secret is returned once, when the token is created, and never stored: only a SHA-256 hash of it is. If it is lost, revoke the token and create a new one."
+      "description": "The admin page, and the API it uses to manage device tokens and calendar names. Enabled only when Supabase is configured; otherwise every admin API operation answers `503`.\n\nA device token's secret is returned once, when the token is created, and never stored: only a SHA-256 hash of it is. If it is lost, revoke the token and create a new one.\n\nCalendar names and categories are stored for the server and shown on the panel. They apply on the next calendar response; the server also publishes `lcars.calendar.updated` so a display refetches."
     },
     {
       "name": "Cameras",
@@ -735,6 +735,83 @@
           }
         }
       }
+    },
+    "/admin/api/calendars": {
+      "get": {
+        "operationId": "listCalendars",
+        "tags": ["Admin"],
+        "summary": "List calendars",
+        "description": "Lists every calendar found in `calendar.dir`, with the display name and category set for it. `source` is the name used when `name` is empty.",
+        "security": [{"adminSession": []}],
+        "responses": {
+          "200": {
+            "description": "The calendars.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["calendars"],
+                  "properties": {
+                    "calendars": {
+                      "type": "array",
+                      "items": {"$ref": "#/components/schemas/CalendarSource"}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {"$ref": "#/components/responses/AdminUnauthorized"},
+          "503": {
+            "description": "The admin API is disabled, or `calendar.dir` is not set.",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Error"}
+              }
+            }
+          },
+          "500": {"$ref": "#/components/responses/InternalError"}
+        }
+      },
+      "put": {
+        "operationId": "saveCalendar",
+        "tags": ["Admin"],
+        "summary": "Name a calendar",
+        "description": "Sets the display name and category for a calendar from the list. An empty name keeps the source. An empty name and category together clear the saved label. The panel shows the first 8 characters of the name. Saving publishes `lcars.calendar.updated`.",
+        "security": [{"adminSession": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/SaveCalendarRequest"}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The calendar, with the name and category now in effect.",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/CalendarSource"}
+              }
+            }
+          },
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "401": {"$ref": "#/components/responses/AdminUnauthorized"},
+          "404": {
+            "description": "No calendar in the directory has this id.",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Error"},
+                "example": {"error": "no such calendar"}
+              }
+            }
+          },
+          "415": {"$ref": "#/components/responses/UnsupportedMediaType"},
+          "503": {"$ref": "#/components/responses/AdminUnavailable"},
+          "500": {"$ref": "#/components/responses/InternalError"}
+        }
+      }
     }
   },
   "components": {
@@ -910,6 +987,7 @@
           "id",
           "title",
           "calendar",
+          "category",
           "location",
           "all_day",
           "start",
@@ -928,7 +1006,12 @@
           },
           "calendar": {
             "type": "string",
-            "description": "Name of the calendar the event is from. See the Calendar section above for how it is chosen."
+            "description": "Name shown for the calendar. A name set on the admin page, if there is one; otherwise a short source from the file (a mailbox name such as `ada`, or `Gmail`); otherwise `X-WR-CALNAME`, the top-level subdirectory, or the file name."
+          },
+          "category": {
+            "type": "string",
+            "enum": ["", "work", "band", "personal", "house"],
+            "description": "Lane set for this calendar on the admin page. Empty when none is set; a display then chooses a lane from the name."
           },
           "location": {
             "type": "string",
@@ -1073,6 +1156,67 @@
             "maxLength": 100,
             "description": "A label for the device. Leading and trailing spaces are removed.",
             "example": "Kitchen display"
+          }
+        }
+      },
+      "CalendarSource": {
+        "type": "object",
+        "required": ["id", "source", "title", "path", "name", "category"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable key for this calendar: `mail:` plus the mailbox, or `file:` plus its path under `calendar.dir`.",
+            "example": "mail:ada@example.com"
+          },
+          "source": {
+            "type": "string",
+            "description": "Name used when `name` is empty.",
+            "example": "ada"
+          },
+          "title": {
+            "type": "string",
+            "description": "The file's `X-WR-CALNAME`, or `source` when it has none.",
+            "example": "Ada Google Calendar"
+          },
+          "path": {
+            "type": "string",
+            "description": "Path of the `.ics` file under `calendar.dir`. Several files that share an id are joined with a comma.",
+            "example": "ada.ics"
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name set on the admin page. Empty when the source is shown instead.",
+            "example": "Family"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["", "work", "band", "personal", "house"],
+            "description": "Lane set on the admin page. Empty when none is set."
+          }
+        }
+      },
+      "SaveCalendarRequest": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A calendar `id` from the list.",
+            "example": "mail:ada@example.com"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Display name. Leading and trailing spaces are removed. Empty keeps the source. The panel shows the first 8 characters.",
+            "example": "Family"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["", "work", "band", "personal", "house"],
+            "description": "Lane. Empty clears it. `Work` and `work` are the same."
           }
         }
       }

@@ -4,6 +4,7 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/nats-io/nats.go"
 
@@ -25,6 +26,12 @@ type Deps struct {
 	Devices *devices.Store
 	// Admins signs admins in; it is required with Devices.
 	Admins AdminAuth
+	// Labels stores the display names and lanes set for calendars. It is
+	// required by the calendar admin endpoints, which also need Calendar.
+	Labels CalendarLabelDB
+	// CalendarChanged publishes lcars.calendar.updated after a label change
+	// so a display refetches. Nil when nothing is listening.
+	CalendarChanged func(time.Time)
 }
 
 // New returns the root handler with all routes and middleware attached.
@@ -57,11 +64,14 @@ func addRoutes(mux router, logger *slog.Logger, deps Deps) {
 	mux.Handle("GET /cameras/{sn}/stream", requireDevice(deps.Devices, handle(logger, cameraStream(logger, deps.Cameras))))
 	mux.Handle("GET /cameras/{sn}/snapshot", requireDevice(deps.Devices, handle(logger, cameraSnapshot(logger, deps.Cameras))))
 
-	// The admin page, and the API it uses to manage device tokens.
+	// The admin page, and the API it uses to manage device tokens and calendar
+	// names.
 	mux.Handle("GET /admin/", handle(logger, adminPage(adminFiles, adminBuilt)))
 	mux.Handle("POST /admin/api/session", handle(logger, adminSignIn(logger, deps)))
 	mux.Handle("GET /admin/api/tokens", handle(logger, requireAdmin(logger, deps, listTokens(logger, deps.Devices))))
 	mux.Handle("POST /admin/api/tokens", handle(logger, requireAdmin(logger, deps, createToken(logger, deps.Devices))))
 	mux.Handle("DELETE /admin/api/tokens/{id}",
 		handle(logger, requireAdmin(logger, deps, revokeToken(logger, deps.Devices))))
+	mux.Handle("GET /admin/api/calendars", handle(logger, requireAdmin(logger, deps, listCalendars(logger, deps))))
+	mux.Handle("PUT /admin/api/calendars", handle(logger, requireAdmin(logger, deps, saveCalendar(logger, deps))))
 }

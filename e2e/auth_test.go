@@ -226,6 +226,7 @@ func authServer(t *testing.T, env ...string) (*server, string) {
 	t.Helper()
 	s := requireSupabase(t)
 	email, password := createAdmin(t)
+	clearFixtureCalendarLabel(t)
 	env = append(append(s.env(), "LCARS_CALENDAR_DIR="+fixturesDir(t), "LCARS_TIMEZONE=America/New_York"), env...)
 	p := startServer(t, env...)
 	return p, signIn(t, p.url(""), email, password)
@@ -268,6 +269,8 @@ func TestAdminAPI(t *testing.T) {
 			{http.MethodGet, "/admin/api/tokens"},
 			{http.MethodPost, "/admin/api/tokens"},
 			{http.MethodDelete, "/admin/api/tokens/dev_000000000000"},
+			{http.MethodGet, "/admin/api/calendars"},
+			{http.MethodPut, "/admin/api/calendars"},
 		} {
 			resp := adminCall(t, base, op[0], op[1], bearer, map[string]string{"name": "x"})
 			if resp.StatusCode != http.StatusUnauthorized {
@@ -526,6 +529,8 @@ func TestAdminDisabled(t *testing.T) {
 		{http.MethodGet, "/admin/api/tokens"},
 		{http.MethodPost, "/admin/api/tokens"},
 		{http.MethodDelete, "/admin/api/tokens/dev_000000000000"},
+		{http.MethodGet, "/admin/api/calendars"},
+		{http.MethodPut, "/admin/api/calendars"},
 	} {
 		resp := adminCall(t, p.url(""), op[0], op[1], "x", map[string]string{"name": "x"})
 		if resp.StatusCode != http.StatusServiceUnavailable || !bytes.Contains(resp.body, []byte("supabase.url")) {

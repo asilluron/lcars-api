@@ -65,7 +65,10 @@ pub struct CalendarEvent {
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub title: ::prost::alloc::string::String,
-    /// Name of the calendar the event belongs to.
+    /// Name shown for this calendar. An admin-set name if one is set, otherwise
+    /// a short source from the file (a mailbox name such as "ada", or "Gmail"),
+    /// otherwise the file's X-WR-CALNAME, its top-level subdirectory, or its
+    /// file name.
     #[prost(string, tag="3")]
     pub calendar: ::prost::alloc::string::String,
     /// Empty if the event has no location.
@@ -88,6 +91,11 @@ pub struct CalendarEvent {
     /// ends at midnight); unset for all-day events and on days before the last.
     #[prost(string, optional, tag="9")]
     pub end_time: ::core::option::Option<::prost::alloc::string::String>,
+    /// Lane set for this calendar on the admin page: "work", "band", "personal"
+    /// or "house". Empty when none is set; a display then chooses a lane from
+    /// the calendar name.
+    #[prost(string, tag="10")]
+    pub category: ::prost::alloc::string::String,
 }
 /// CalendarUpdated is published on the subject "lcars.calendar.updated" when
 /// the server re-reads the .ics files and they have changed. Clients showing

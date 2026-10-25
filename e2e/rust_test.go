@@ -27,6 +27,8 @@ func TestRustClient(t *testing.T) {
 	sb := requireSupabase(t)
 	buildImage(t)
 	email, password := createAdmin(t)
+	clearFixtureCalendarLabel(t)
+	t.Cleanup(func() { clearFixtureCalendarLabel(t) })
 
 	network := supabaseNetwork
 	alias := "lcars-rust-" + strconv.Itoa(os.Getpid())

@@ -1,6 +1,6 @@
 // Package supabase is a minimal client for the parts of Supabase lcars-api
 // uses: Auth (to sign admins in and check their sessions) and the Data API
-// (PostgREST) for the device_tokens table.
+// (PostgREST) for the device_tokens and calendar_labels tables.
 //
 // It authenticates with the project's secret key (or the legacy service_role
 // key), which bypasses row-level security, so it must only ever be used on
@@ -126,6 +126,44 @@ func (c *Client) InsertDeviceToken(ctx context.Context, t DeviceToken) (DeviceTo
 		return DeviceToken{}, fmt.Errorf("insert device token: got %d rows back, want 1", len(rows))
 	}
 	return rows[0], nil
+}
+
+// CalendarLabel is a row of the calendar_labels table: the display name and
+// lane an admin set for one calendar. Name and Category may be empty.
+type CalendarLabel struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Category  string    `json:"category"`
+	UpdatedAt time.Time `json:"updated_at,omitzero"`
+}
+
+// labelsPath is the Data API path of the calendar_labels table.
+const labelsPath = "/rest/v1/calendar_labels"
+
+// ListCalendarLabels returns every saved calendar label, by id.
+func (c *Client) ListCalendarLabels(ctx context.Context) ([]CalendarLabel, error) {
+	var rows []CalendarLabel
+	err := c.do(ctx, http.MethodGet, labelsPath+"?select=id,name,category&order=id.asc", "", nil, &rows, nil)
+	return rows, err
+}
+
+// UpsertCalendarLabel inserts row or replaces the row with the same id.
+func (c *Client) UpsertCalendarLabel(ctx context.Context, row CalendarLabel) error {
+	row.UpdatedAt = time.Now().UTC()
+	return c.do(ctx, http.MethodPost, labelsPath+"?on_conflict=id", "", row, nil,
+		http.Header{"Prefer": {"resolution=merge-duplicates,return=minimal"}})
+}
+
+// DeleteCalendarLabel deletes the label with the given id, or returns
+// ErrNotFound.
+func (c *Client) DeleteCalendarLabel(ctx context.Context, id string) error {
+	var rows []CalendarLabel
+	err := c.do(ctx, http.MethodDelete, labelsPath+"?id=eq."+url.QueryEscape(id), "", nil, &rows,
+		http.Header{"Prefer": {"return=representation"}})
+	if err == nil && len(rows) == 0 {
+		return ErrNotFound
+	}
+	return err
 }
 
 // DeleteDeviceToken deletes the token with the given ID, or returns
