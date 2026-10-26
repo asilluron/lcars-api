@@ -113,6 +113,10 @@ func (s *Store) SetOnChange(fn func(time.Time)) {
 // An empty list has the zero time (unless the list was cleared during this
 // session, in which case the time of that deletion is returned).
 func (s *Store) List(ctx context.Context) ([]Reminder, time.Time, error) {
+	s.mu.Lock()
+	at := s.lastChange
+	s.mu.Unlock()
+
 	items, err := s.db.ListReminders(ctx)
 	if err != nil {
 		return nil, time.Time{}, err
@@ -120,9 +124,6 @@ func (s *Store) List(ctx context.Context) ([]Reminder, time.Time, error) {
 	items = slices.Clone(items)
 	slices.SortFunc(items, compareReminders)
 
-	s.mu.Lock()
-	at := s.lastChange
-	s.mu.Unlock()
 	if itemLatest := latest(items); itemLatest.After(at) {
 		at = itemLatest
 	}
