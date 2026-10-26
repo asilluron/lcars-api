@@ -2,6 +2,7 @@ package weather
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -60,13 +61,13 @@ func TestCurrent(t *testing.T) {
 }
 
 func TestCurrentUnavailable(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "nope", http.StatusBadGateway)
 	}))
 	t.Cleanup(upstream.Close)
 	_, err := New(upstream.URL, 0, 0).Current(context.Background())
-	se, ok := err.(*StatusError)
-	if !ok || se.Code != http.StatusServiceUnavailable || se.Msg != Unavailable {
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != http.StatusServiceUnavailable || se.Msg != Unavailable {
 		t.Fatalf("err = %v", err)
 	}
 	if strings.Contains(se.Error(), "latitude") || strings.Contains(se.Error(), upstream.URL) {
