@@ -8,6 +8,9 @@
 //! | [`subjects::CALENDAR_GET`]             | request/reply | [`v1::GetCalendarRequest`] → [`v1::GetCalendarResponse`] |
 //! | [`subjects::CALENDAR_UPDATED`]         | event         | [`v1::CalendarUpdated`]                              |
 //! | [`subjects::CAMERAS_LIST`]             | request/reply | [`v1::ListCamerasRequest`] → [`v1::ListCamerasResponse`] |
+//! | [`subjects::REMINDERS_LIST`]           | request/reply | [`v1::ListRemindersRequest`] → [`v1::ListRemindersResponse`] |
+//! | [`subjects::REMINDERS_SET`]            | request/reply | [`v1::SetReminderRequest`] → [`v1::ListRemindersResponse`] |
+//! | [`subjects::REMINDERS_UPDATED`]        | event         | [`v1::RemindersUpdated`]                             |
 //! | [`subjects::TRAINING_PUT`]             | request/reply | [`v1::PutTrainingAudioRequest`] → [`v1::PutTrainingAudioResponse`] |
 //!
 //! A failed request gets a reply with an empty body and two headers:
@@ -61,6 +64,17 @@ pub mod subjects {
     /// this server. Video is not sent on NATS. Close the stream response
     /// to stop that viewer.
     pub const CAMERAS_LIST: &str = "lcars.cameras.list";
+    /// Request a [`ListRemindersRequest`](crate::v1::ListRemindersRequest);
+    /// the reply is a [`ListRemindersResponse`](crate::v1::ListRemindersResponse).
+    pub const REMINDERS_LIST: &str = "lcars.reminders.list";
+    /// Request a [`SetReminderRequest`](crate::v1::SetReminderRequest) to
+    /// mark one reminder done or open. The reply is the list afterwards,
+    /// a [`ListRemindersResponse`](crate::v1::ListRemindersResponse).
+    pub const REMINDERS_SET: &str = "lcars.reminders.set";
+    /// A [`RemindersUpdated`](crate::v1::RemindersUpdated) is published here
+    /// when a reminder is added, removed, or marked done or open. Request
+    /// the list again on receipt.
+    pub const REMINDERS_UPDATED: &str = "lcars.reminders.updated";
     /// Send a [`PutTrainingAudioRequest`](crate::v1::PutTrainingAudioRequest);
     /// the reply is a [`PutTrainingAudioResponse`](crate::v1::PutTrainingAudioResponse).
     /// The server stores the PCM under a name it chooses.
@@ -69,8 +83,9 @@ pub mod subjects {
 
 /// Headers on error replies (the NATS service API convention).
 pub mod headers {
-    /// HTTP-style status code: `"400"` for an invalid request, `"503"` if
-    /// the data source isn't configured on the server, `"500"` otherwise.
+    /// HTTP-style status code: `"400"` for an invalid request, `"404"` if a
+    /// reminder id is not in the list, `"503"` if the data source isn't
+    /// configured on the server, `"500"` otherwise.
     pub const ERROR_CODE: &str = "Nats-Service-Error-Code";
     /// Human-readable error message.
     pub const ERROR: &str = "Nats-Service-Error";

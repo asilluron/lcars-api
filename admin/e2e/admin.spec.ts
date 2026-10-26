@@ -89,6 +89,25 @@ test("dismissing the revoke dialog keeps the token", async ({ page }) => {
   await expect(row).toHaveCount(0);
 });
 
+test("adds and removes a reminder", async ({ page }) => {
+  await signIn(page);
+  const title = `Bring in recycling bin ${Date.now()}`;
+  await page.getByLabel("Title").fill(title);
+  await page.getByLabel("Detail").fill("Due today · House");
+  await page.getByLabel("Accent").selectOption("blue");
+  await page.getByRole("button", { name: "Add reminder" }).click();
+
+  const row = page.getByTestId("reminders").locator("tr", { hasText: title });
+  await expect(row).toContainText("Due today · House");
+  await expect(row).toContainText("blue");
+  await expect(row).toContainText("Open");
+  await expect(page.getByLabel("Title")).toHaveValue("");
+
+  page.once("dialog", (d) => d.accept());
+  await row.getByRole("button", { name: `Remove ${title}` }).click();
+  await expect(row).toHaveCount(0);
+});
+
 test("signs out, and back in after the session is lost", async ({ page }) => {
   await signIn(page);
   await page.getByRole("button", { name: "Sign out" }).click();
