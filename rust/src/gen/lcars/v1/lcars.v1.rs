@@ -170,4 +170,41 @@ pub struct PutTrainingAudioResponse {
     #[prost(uint32, tag="1")]
     pub accepted_bytes: u32,
 }
+/// GetWeatherRequest asks for the current conditions. Send it as a request on
+/// the subject "lcars.weather.get"; the reply is a GetWeatherResponse. An
+/// empty message (or an empty body) is the whole request.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid request, 503 if weather is
+/// not configured or the forecast could not be read, 500 otherwise) and
+/// "Nats-Service-Error" (a message).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetWeatherRequest {
+}
+/// GetWeatherResponse is the current conditions at the configured point,
+/// in Fahrenheit and miles per hour, rounded to whole numbers.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetWeatherResponse {
+    /// Short condition, such as "Partly cloudy".
+    #[prost(string, tag="1")]
+    pub summary: ::prost::alloc::string::String,
+    /// Current temperature.
+    #[prost(int32, tag="2")]
+    pub temperature_f: i32,
+    /// Current apparent temperature.
+    #[prost(int32, tag="3")]
+    pub feels_like_f: i32,
+    /// Today's forecast high.
+    #[prost(int32, tag="4")]
+    pub high_f: i32,
+    /// Today's forecast low.
+    #[prost(int32, tag="5")]
+    pub low_f: i32,
+    /// Current wind speed.
+    #[prost(int32, tag="6")]
+    pub wind_mph: i32,
+    /// When this report was read, in seconds since the Unix epoch.
+    #[prost(int64, tag="7")]
+    pub observed_at_unix: i64,
+}
 // @@protoc_insertion_point(module)

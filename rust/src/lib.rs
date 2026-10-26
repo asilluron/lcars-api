@@ -9,6 +9,7 @@
 //! | [`subjects::CALENDAR_UPDATED`]         | event         | [`v1::CalendarUpdated`]                              |
 //! | [`subjects::CAMERAS_LIST`]             | request/reply | [`v1::ListCamerasRequest`] → [`v1::ListCamerasResponse`] |
 //! | [`subjects::TRAINING_PUT`]             | request/reply | [`v1::PutTrainingAudioRequest`] → [`v1::PutTrainingAudioResponse`] |
+//! | [`subjects::WEATHER_GET`]              | request/reply | [`v1::GetWeatherRequest`] → [`v1::GetWeatherResponse`] |
 //!
 //! A failed request gets a reply with an empty body and two headers:
 //! [`headers::ERROR_CODE`] (an HTTP-style status such as `"400"`) and
@@ -65,6 +66,10 @@ pub mod subjects {
     /// the reply is a [`PutTrainingAudioResponse`](crate::v1::PutTrainingAudioResponse).
     /// The server stores the PCM under a name it chooses.
     pub const TRAINING_PUT: &str = "lcars.training.put";
+    /// Request a [`GetWeatherRequest`](crate::v1::GetWeatherRequest); the
+    /// reply is a [`GetWeatherResponse`](crate::v1::GetWeatherResponse).
+    /// Temperatures are Fahrenheit and the wind speed is miles per hour.
+    pub const WEATHER_GET: &str = "lcars.weather.get";
 }
 
 /// Headers on error replies (the NATS service API convention).

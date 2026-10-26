@@ -24,6 +24,7 @@ import (
 	"github.com/asilluron/lcars-api/internal/server"
 	"github.com/asilluron/lcars-api/internal/supabase"
 	"github.com/asilluron/lcars-api/internal/training"
+	"github.com/asilluron/lcars-api/internal/weather"
 )
 
 func main() {
@@ -123,10 +124,19 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		logger.Info("cameras disabled: eufy.url is not set")
 	}
 
+	var forecast *weather.Client
+	if cfg.Weather.Enabled() {
+		forecast = weather.New(cfg.Weather.URL, *cfg.Weather.Latitude, *cfg.Weather.Longitude)
+		logger.Info("weather enabled")
+	} else {
+		logger.Info("weather disabled: weather.latitude and weather.longitude are not set")
+	}
+
 	svc, err := natsapi.Start(ctx, bus.Conn, logger, server.Version(), natsapi.Deps{
 		Calendar: cal,
 		Cameras:  cams,
 		Training: audio,
+		Weather:  forecast,
 	})
 	if err != nil {
 		return err
@@ -144,6 +154,7 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		Handler: server.New(logger, server.Deps{
 			Calendar: cal,
 			Cameras:  cams,
+			Weather:  forecast,
 			NATS:     bus.Conn,
 			Devices:  tokens,
 			Admins:   admins,

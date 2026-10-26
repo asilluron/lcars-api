@@ -32,6 +32,7 @@ const (
 	subjectCalendarGet     = "lcars.calendar.get"
 	subjectCalendarUpdated = "lcars.calendar.updated"
 	subjectTrainingPut     = "lcars.training.put"
+	subjectWeatherGet      = "lcars.weather.get"
 )
 
 func connectNATS(t *testing.T, url string) *nats.Conn {
@@ -307,7 +308,7 @@ func TestNATSService(t *testing.T) {
 	for _, ep := range info.Endpoints {
 		endpoints = append(endpoints, ep.Subject)
 	}
-	want := []string{subjectCalendarGet, subjectCamerasList, subjectTrainingPut}
+	want := []string{subjectCalendarGet, subjectCamerasList, subjectTrainingPut, subjectWeatherGet}
 	slices.Sort(endpoints)
 	slices.Sort(want)
 	if !slices.Equal(endpoints, want) {

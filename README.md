@@ -137,6 +137,18 @@ control.
 
 `make eufy` type-checks and tests the proxy without an Eufy account.
 
+## Weather
+
+`lcars.weather.get` (NATS) and `GET /weather` (HTTP) serve the current
+conditions at the point set by `weather.latitude` and `weather.longitude`.
+Leave either unset and both answer `503`. Temperatures are Fahrenheit and
+the wind speed is miles per hour, rounded to whole numbers. The location is
+sent to the forecast service and is not logged or included in the response.
+
+The default service is [Open-Meteo](https://open-meteo.com/) and needs no
+key. `weather.url` replaces that base URL. A report is kept for ten minutes,
+so several devices share one forecast request.
+
 ## NATS API
 
 Devices connect to `nats://<server>:4222`, with their device token as the
@@ -149,6 +161,7 @@ message from [`proto/lcars/v1`](proto/lcars/v1), which documents each field.
 | `lcars.calendar.get`     | request/reply | `GetCalendarRequest` → `GetCalendarResponse`. See [Calendar](#calendar). |
 | `lcars.calendar.updated` | event         | `CalendarUpdated`, published when the `.ics` files change. Request the calendar again when you get one. |
 | `lcars.cameras.list`     | request/reply | `ListCamerasRequest` → `ListCamerasResponse`. See [Cameras](#cameras). An empty body is the whole request. |
+| `lcars.weather.get`      | request/reply | `GetWeatherRequest` → `GetWeatherResponse`. See [Weather](#weather). An empty body is the whole request. |
 | `lcars.training.put`     | request/reply | `PutTrainingAudioRequest` → `PutTrainingAudioResponse`. See [Training audio](#training-audio). |
 
 - **Errors.** A failed request gets a reply with an empty body and two
@@ -205,6 +218,7 @@ Full HTTP reference: run the server and open <http://localhost:8080/docs>.
 | GET    | `/cameras`     | JSON version of `lcars.cameras.list`. See [Cameras](#cameras). Needs a device token when authentication is on. |
 | GET    | `/cameras/{sn}/stream` | Live Annex-B video for that camera. Stays open until the client closes it. Needs a device token when authentication is on. |
 | GET    | `/cameras/{sn}/snapshot` | Latest stored JPEG for that camera. `404` does not wake it. Needs a device token when authentication is on. |
+| GET    | `/weather`      | JSON version of `lcars.weather.get`. See [Weather](#weather). Needs a device token when authentication is on. |
 | GET    | `/openapi.json` | OpenAPI 3.1 document for the HTTP API.            |
 | GET    | `/docs`         | HTTP API reference ([Redoc](https://github.com/Redocly/redoc)) rendered from `/openapi.json`. |
 | GET    | `/admin/`       | The [admin page](#devices-and-the-admin-page).    |
@@ -333,6 +347,9 @@ startup.
 | `supabase.secret_key`       | `LCARS_SUPABASE_SECRET_KEY`       | unset            | Supabase secret key (`sb_secret_...`) or legacy `service_role` key. Keep it secret |
 | `supabase.refresh_interval` | `LCARS_SUPABASE_REFRESH_INTERVAL` | `1m`             | How often to re-read device tokens, to pick up changes made directly in the database. Minimum `1s` |
 | `eufy.url`              | `LCARS_EUFY_URL`                  | unset (disabled) | Base URL of the Eufy camera proxy, e.g. `http://127.0.0.1:3000`. No path and no credentials. See [Cameras](#cameras) |
+| `weather.latitude`      | `LCARS_WEATHER_LATITUDE`          | unset (disabled) | Decimal degrees, from -90 to 90. Set with `weather.longitude`. See [Weather](#weather) |
+| `weather.longitude`     | `LCARS_WEATHER_LONGITUDE`         | unset (disabled) | Decimal degrees, from -180 to 180. Set with `weather.latitude` |
+| `weather.url`           | `LCARS_WEATHER_URL`               | `https://api.open-meteo.com` | Forecast service base URL. No path and no credentials. Used only when a location is set |
 
 ## Docker
 
