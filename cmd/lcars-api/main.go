@@ -21,6 +21,7 @@ import (
 	"github.com/asilluron/lcars-api/internal/config"
 	"github.com/asilluron/lcars-api/internal/devices"
 	"github.com/asilluron/lcars-api/internal/natsapi"
+	"github.com/asilluron/lcars-api/internal/reminders"
 	"github.com/asilluron/lcars-api/internal/server"
 	"github.com/asilluron/lcars-api/internal/supabase"
 	"github.com/asilluron/lcars-api/internal/training"
@@ -73,17 +74,20 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		logger.Info("training disabled: training.dir is not set")
 	}
 
-	// Device tokens, when Supabase is configured. bus is set below; tokens
-	// can only be removed once the servers are running.
+	// Device tokens and reminders, when Supabase is configured. bus is set
+	// below; tokens can only be removed once the servers are running.
 	var (
-		bus    *broker.Broker
-		tokens *devices.Store
-		admins server.AdminAuth
-		auth   *broker.Auth
+		bus          *broker.Broker
+		tokens       *devices.Store
+		reminderList *reminders.Store
+		admins       server.AdminAuth
+		auth         *broker.Auth
 	)
 	if cfg.Supabase.Enabled() {
 		db := supabase.New(cfg.Supabase.URL, cfg.Supabase.SecretKey)
 		admins = db
+		reminderList = reminders.New(reminders.Supabase(db))
+		logger.Info("reminders enabled")
 		tokens = devices.NewStore(db, logger, func(id string) { bus.Disconnect(id) })
 		if err := tokens.Load(ctx); err != nil {
 			// Keep going: Run retries, and until then devices are refused.
@@ -96,6 +100,7 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		}
 		logger.Info("device authentication enabled", "supabase", cfg.Supabase.URL)
 	} else {
+		logger.Info("reminders disabled: supabase.url is not set")
 		logger.Warn("device authentication disabled: supabase.url is not set, so anyone on the network can use the API")
 	}
 
@@ -132,11 +137,16 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		logger.Info("weather disabled: weather.latitude and weather.longitude are not set")
 	}
 
+	if reminderList != nil {
+		reminderList.SetOnChange(natsapi.RemindersChanged(bus.Conn, logger))
+	}
+
 	svc, err := natsapi.Start(ctx, bus.Conn, logger, server.Version(), natsapi.Deps{
-		Calendar: cal,
-		Cameras:  cams,
-		Training: audio,
-		Weather:  forecast,
+		Calendar:  cal,
+		Cameras:   cams,
+		Reminders: reminderList,
+		Training:  audio,
+		Weather:   forecast,
 	})
 	if err != nil {
 		return err
@@ -152,12 +162,13 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: server.New(logger, server.Deps{
-			Calendar: cal,
-			Cameras:  cams,
-			Weather:  forecast,
-			NATS:     bus.Conn,
-			Devices:  tokens,
-			Admins:   admins,
+			Calendar:  cal,
+			Cameras:   cams,
+			Reminders: reminderList,
+			Weather:   forecast,
+			NATS:      bus.Conn,
+			Devices:   tokens,
+			Admins:    admins,
 		}),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		ReadTimeout:       cfg.ReadTimeout,

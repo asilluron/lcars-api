@@ -10,6 +10,7 @@ import (
 	"github.com/asilluron/lcars-api/internal/calendar"
 	"github.com/asilluron/lcars-api/internal/cameras"
 	"github.com/asilluron/lcars-api/internal/devices"
+	"github.com/asilluron/lcars-api/internal/reminders"
 	"github.com/asilluron/lcars-api/internal/weather"
 )
 
@@ -19,6 +20,8 @@ type Deps struct {
 	Calendar *calendar.Store
 	// Cameras reads the Eufy proxy. If nil, camera endpoints answer 503.
 	Cameras *cameras.Client
+	// Reminders is the to-do list. If nil, reminder endpoints answer 503.
+	Reminders *reminders.Store
 	// Weather reads the forecast service. If nil, GET /weather answers 503.
 	Weather *weather.Client
 	// NATS is the connection the API is served on, for /healthz.
@@ -59,13 +62,19 @@ func addRoutes(mux router, logger *slog.Logger, deps Deps) {
 	mux.Handle("GET /cameras", requireDevice(deps.Devices, handle(logger, cameraList(logger, deps.Cameras))))
 	mux.Handle("GET /cameras/{sn}/stream", requireDevice(deps.Devices, handle(logger, cameraStream(logger, deps.Cameras))))
 	mux.Handle("GET /cameras/{sn}/snapshot", requireDevice(deps.Devices, handle(logger, cameraSnapshot(logger, deps.Cameras))))
+	mux.Handle("GET /reminders", requireDevice(deps.Devices, handle(logger, listReminders(deps.Reminders))))
+	mux.Handle("POST /reminders/{id}", requireDevice(deps.Devices, handle(logger, setReminder(deps.Reminders))))
 	mux.Handle("GET /weather", requireDevice(deps.Devices, handle(logger, weatherHandler(logger, deps.Weather))))
 
-	// The admin page, and the API it uses to manage device tokens.
+	// The admin page, and the API it uses to manage device tokens and reminders.
 	mux.Handle("GET /admin/", handle(logger, adminPage(adminFiles, adminBuilt)))
 	mux.Handle("POST /admin/api/session", handle(logger, adminSignIn(logger, deps)))
 	mux.Handle("GET /admin/api/tokens", handle(logger, requireAdmin(logger, deps, listTokens(logger, deps.Devices))))
 	mux.Handle("POST /admin/api/tokens", handle(logger, requireAdmin(logger, deps, createToken(logger, deps.Devices))))
 	mux.Handle("DELETE /admin/api/tokens/{id}",
 		handle(logger, requireAdmin(logger, deps, revokeToken(logger, deps.Devices))))
+	mux.Handle("GET /admin/api/reminders", handle(logger, requireAdmin(logger, deps, listRemindersAdmin(deps.Reminders))))
+	mux.Handle("POST /admin/api/reminders", handle(logger, requireAdmin(logger, deps, createReminder(logger, deps.Reminders))))
+	mux.Handle("DELETE /admin/api/reminders/{id}",
+		handle(logger, requireAdmin(logger, deps, deleteReminder(logger, deps.Reminders))))
 }

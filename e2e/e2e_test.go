@@ -201,7 +201,16 @@ func TestAPIDocs(t *testing.T) {
 		// Path templates are requested with a stand-in serial. The OpenAPI
 		// path itself is not a serial the proxy would accept.
 		reqPath := strings.ReplaceAll(path, "{sn}", "CAM1")
-		if r := mustDo(t, http.MethodGet, p.url(reqPath)); r.StatusCode != http.StatusOK {
+		r := mustDo(t, http.MethodGet, p.url(reqPath))
+		// Reminders are stored in Supabase. Turning that on also requires
+		// device authentication, so this server (auth off) answers 503.
+		if path == "/reminders" {
+			if r.StatusCode != http.StatusServiceUnavailable {
+				t.Errorf("GET /reminders status = %d, want 503 without Supabase", r.StatusCode)
+			}
+			continue
+		}
+		if r.StatusCode != http.StatusOK {
 			t.Errorf("GET %s (documented) status = %d, want 200", path, r.StatusCode)
 		}
 	}
