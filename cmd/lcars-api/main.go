@@ -25,6 +25,7 @@ import (
 	"github.com/asilluron/lcars-api/internal/server"
 	"github.com/asilluron/lcars-api/internal/supabase"
 	"github.com/asilluron/lcars-api/internal/training"
+	"github.com/asilluron/lcars-api/internal/weather"
 )
 
 func main() {
@@ -128,6 +129,14 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		logger.Info("cameras disabled: eufy.url is not set")
 	}
 
+	var forecast *weather.Client
+	if cfg.Weather.Enabled() {
+		forecast = weather.New(cfg.Weather.URL, *cfg.Weather.Latitude, *cfg.Weather.Longitude)
+		logger.Info("weather enabled")
+	} else {
+		logger.Info("weather disabled: weather.latitude and weather.longitude are not set")
+	}
+
 	if reminderList != nil {
 		reminderList.SetOnChange(natsapi.RemindersChanged(bus.Conn, logger))
 	}
@@ -137,6 +146,7 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		Cameras:   cams,
 		Reminders: reminderList,
 		Training:  audio,
+		Weather:   forecast,
 	})
 	if err != nil {
 		return err
@@ -155,6 +165,7 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 			Calendar:  cal,
 			Cameras:   cams,
 			Reminders: reminderList,
+			Weather:   forecast,
 			NATS:      bus.Conn,
 			Devices:   tokens,
 			Admins:    admins,

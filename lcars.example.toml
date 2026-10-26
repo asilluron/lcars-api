@@ -132,3 +132,18 @@
 # disable cameras.
 # Env: LCARS_EUFY_URL
 # url = "http://127.0.0.1:3000"
+
+[weather]
+# Where to read the forecast for lcars.weather.get and GET /weather, as
+# decimal degrees. Set both, or neither. The values are sent to the forecast
+# service and are not logged. Leave them unset to disable weather.
+# Env: LCARS_WEATHER_LATITUDE
+# latitude = "0.0"
+
+# Env: LCARS_WEATHER_LONGITUDE
+# longitude = "0.0"
+
+# Forecast service. The default is Open-Meteo and needs no key. Use this to
+# point tests or a mirror at another base URL. No path and no credentials.
+# Env: LCARS_WEATHER_URL
+# url = "https://api.open-meteo.com"

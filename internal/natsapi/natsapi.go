@@ -26,6 +26,7 @@ import (
 	"github.com/asilluron/lcars-api/internal/cameras"
 	"github.com/asilluron/lcars-api/internal/reminders"
 	"github.com/asilluron/lcars-api/internal/training"
+	"github.com/asilluron/lcars-api/internal/weather"
 )
 
 // ServiceName is the NATS service name, for $SRV.PING.lcars and friends.
@@ -57,12 +58,14 @@ const (
 	// directory. It is the one subject that writes files, and only inside
 	// that directory.
 	SubjectTrainingPut = "lcars.training.put"
+	// SubjectWeatherGet answers a GetWeatherRequest with a GetWeatherResponse.
+	SubjectWeatherGet = "lcars.weather.get"
 )
 
 var (
 	// Requests lists the subjects the API answers requests on. Devices may
 	// publish to them.
-	Requests = []string{SubjectCalendarGet, SubjectCamerasList, SubjectRemindersList, SubjectRemindersSet, SubjectTrainingPut}
+	Requests = []string{SubjectCalendarGet, SubjectCamerasList, SubjectRemindersList, SubjectRemindersSet, SubjectTrainingPut, SubjectWeatherGet}
 	// Events lists the subjects the API publishes events to. Devices may
 	// subscribe to them.
 	Events = []string{SubjectCalendarUpdated, SubjectRemindersUpdated}
@@ -78,6 +81,7 @@ type Deps struct {
 	Cameras   *cameras.Client
 	Reminders *reminders.Store
 	Training  *training.Writer
+	Weather   *weather.Client
 }
 
 // Start registers the service on nc. version is the build version; it is
@@ -134,11 +138,19 @@ func addEndpoints(ctx context.Context, svc micro.Service, logger *slog.Logger, d
 		})); err != nil {
 		return err
 	}
-	return svc.AddEndpoint("training_put", handle(logger, trainingPut(deps.Training, logger)),
+	if err := svc.AddEndpoint("training_put", handle(logger, trainingPut(deps.Training, logger)),
 		micro.WithEndpointSubject(SubjectTrainingPut),
 		micro.WithEndpointMetadata(map[string]string{
 			"request":  "lcars.v1.PutTrainingAudioRequest",
 			"response": "lcars.v1.PutTrainingAudioResponse",
+		})); err != nil {
+		return err
+	}
+	return svc.AddEndpoint("weather_get", handle(logger, weatherGet(ctx, logger, deps.Weather)),
+		micro.WithEndpointSubject(SubjectWeatherGet),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.GetWeatherRequest",
+			"response": "lcars.v1.GetWeatherResponse",
 		}))
 }
 

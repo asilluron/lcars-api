@@ -11,6 +11,7 @@ import (
 	"github.com/asilluron/lcars-api/internal/cameras"
 	"github.com/asilluron/lcars-api/internal/devices"
 	"github.com/asilluron/lcars-api/internal/reminders"
+	"github.com/asilluron/lcars-api/internal/weather"
 )
 
 // Deps are the data sources the handlers read from. A nil field disables the
@@ -21,6 +22,8 @@ type Deps struct {
 	Cameras *cameras.Client
 	// Reminders is the to-do list. If nil, reminder endpoints answer 503.
 	Reminders *reminders.Store
+	// Weather reads the forecast service. If nil, GET /weather answers 503.
+	Weather *weather.Client
 	// NATS is the connection the API is served on, for /healthz.
 	NATS *nats.Conn
 	// Devices checks device tokens and manages them. If nil, devices don't
@@ -61,6 +64,7 @@ func addRoutes(mux router, logger *slog.Logger, deps Deps) {
 	mux.Handle("GET /cameras/{sn}/snapshot", requireDevice(deps.Devices, handle(logger, cameraSnapshot(logger, deps.Cameras))))
 	mux.Handle("GET /reminders", requireDevice(deps.Devices, handle(logger, listReminders(deps.Reminders))))
 	mux.Handle("POST /reminders/{id}", requireDevice(deps.Devices, handle(logger, setReminder(deps.Reminders))))
+	mux.Handle("GET /weather", requireDevice(deps.Devices, handle(logger, weatherHandler(logger, deps.Weather))))
 
 	// The admin page, and the API it uses to manage device tokens and reminders.
 	mux.Handle("GET /admin/", handle(logger, adminPage(adminFiles, adminBuilt)))

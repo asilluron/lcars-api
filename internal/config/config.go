@@ -51,7 +51,21 @@ type Config struct {
 	NATS     NATS
 	Supabase Supabase
 	Eufy     Eufy
+	Weather  Weather
 }
+
+// Weather is the forecast shown on a device. Latitude and longitude are
+// decimal degrees. Both are required to enable it. The values are sent to
+// the forecast service and are not logged.
+type Weather struct {
+	Latitude  *float64
+	Longitude *float64
+	// URL is the forecast service base URL, or "" for the default.
+	URL string
+}
+
+// Enabled reports whether a location is configured.
+func (w Weather) Enabled() bool { return w.Latitude != nil && w.Longitude != nil }
 
 // Eufy is the camera proxy (the eufy/ process). When URL is set, devices can
 // list cameras and open their live video through this server.
@@ -262,6 +276,36 @@ var settings = []setting{
 		c.Eufy.URL = strings.TrimSuffix(v, "/")
 		return nil
 	}},
+	{"weather.latitude", "LCARS_WEATHER_LATITUDE", func(c *Config, v, _ string) error {
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil || n < -90 || n > 90 {
+			return fmt.Errorf("want a latitude from -90 to 90, got %q", v)
+		}
+		c.Weather.Latitude = &n
+		return nil
+	}},
+	{"weather.longitude", "LCARS_WEATHER_LONGITUDE", func(c *Config, v, _ string) error {
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil || n < -180 || n > 180 {
+			return fmt.Errorf("want a longitude from -180 to 180, got %q", v)
+		}
+		c.Weather.Longitude = &n
+		return nil
+	}},
+	{"weather.url", "LCARS_WEATHER_URL", func(c *Config, v, _ string) error {
+		u, err := url.Parse(v)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("want an http(s) URL like https://api.open-meteo.com, got %q", v)
+		}
+		if u.User != nil {
+			return errors.New("must not contain credentials")
+		}
+		if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+			return errors.New("want a base URL with no path, such as https://api.open-meteo.com")
+		}
+		c.Weather.URL = strings.TrimSuffix(v, "/")
+		return nil
+	}},
 }
 
 // EnvVars returns the environment variable of every setting.
@@ -336,6 +380,13 @@ func Load(getenv func(string) string) (Config, error) {
 	if (cfg.Supabase.URL == "") != (cfg.Supabase.SecretKey == "") {
 		return Config{}, errors.New("supabase.url and supabase.secret_key (LCARS_SUPABASE_URL, " +
 			"LCARS_SUPABASE_SECRET_KEY) must be set together")
+	}
+	if (cfg.Weather.Latitude == nil) != (cfg.Weather.Longitude == nil) {
+		return Config{}, errors.New("weather.latitude and weather.longitude (LCARS_WEATHER_LATITUDE, " +
+			"LCARS_WEATHER_LONGITUDE) must be set together")
+	}
+	if cfg.Weather.Enabled() && cfg.Weather.URL == "" {
+		cfg.Weather.URL = "https://api.open-meteo.com"
 	}
 	return cfg, nil
 }
