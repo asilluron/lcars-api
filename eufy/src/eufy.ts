@@ -2,7 +2,12 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
 
-import { EufyMega, FileSessionStore, StoredSnapshotUnavailableError } from "@mega-yfue/eufy-sdk";
+import {
+  EufyMega,
+  FileSessionStore,
+  LiveSnapshotUnavailableError,
+  StoredSnapshotUnavailableError,
+} from "@mega-yfue/eufy-sdk";
 
 import { annexB } from "./annex.ts";
 import type { Config } from "./config.ts";
@@ -94,20 +99,42 @@ export class EufyCameras implements CameraSource {
 
   async snapshot(sn: string): Promise<Buffer | undefined> {
     const device = await this.device(sn);
-    const take = device?.camera?.()?.snapshotStored;
-    if (!take) return undefined;
-    try {
-      const jpeg = await take();
-      return jpeg.length > 0 ? jpeg : undefined;
-    } catch (err) {
-      if (err instanceof StoredSnapshotUnavailableError) return undefined;
-      throw err;
-    }
+    return takeStill(device?.camera?.());
   }
 
   private async device(sn: string) {
     const records = await this.client.getDevices();
     if (!records.some((record) => record.sn === sn)) return undefined;
     return this.client.getDevice(sn);
+  }
+}
+
+/** Camera surface used by {@link takeStill}. Kept narrow so unit tests can fake it. */
+export type StillCamera = {
+  snapshotStored?: () => Promise<Buffer>;
+  snapshotLive?: (opts?: { timeoutMs?: number }) => Promise<{ jpeg: Buffer }>;
+};
+
+// Prefer a retained push thumbnail (no wake). When none is kept, take a short
+// live burst so the panel still has something to show.
+export async function takeStill(camera: StillCamera | undefined): Promise<Buffer | undefined> {
+  if (!camera) return undefined;
+
+  if (camera.snapshotStored) {
+    try {
+      const jpeg = await camera.snapshotStored();
+      if (jpeg.length > 0) return jpeg;
+    } catch (err) {
+      if (!(err instanceof StoredSnapshotUnavailableError)) throw err;
+    }
+  }
+
+  if (!camera.snapshotLive) return undefined;
+  try {
+    const shot = await camera.snapshotLive({ timeoutMs: 20_000 });
+    return shot.jpeg.length > 0 ? shot.jpeg : undefined;
+  } catch (err) {
+    if (err instanceof LiveSnapshotUnavailableError) return undefined;
+    throw err;
   }
 }

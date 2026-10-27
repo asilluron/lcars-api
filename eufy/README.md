@@ -66,7 +66,7 @@ placeholders only.
 | GET | `/healthz` | `loggedIn` and the serials with a client attached. |
 | GET | `/cameras` | Serial, name, and whether the device has a camera. |
 | GET | `/stream/<sn>` | Live video as Annex-B bytes. Opening the response starts the camera; closing it stops that viewer. |
-| GET | `/snapshot/<sn>` | The latest stored JPEG. A miss is 404 and does not wake the camera. |
+| GET | `/snapshot/<sn>` | A JPEG still. Uses a retained push thumbnail when one is kept; otherwise takes a short live burst (needs `ffmpeg` on PATH). A miss is 404. |
 
 A battery camera's stream is extended for as long as a client is reading,
 then left to stop. Wired cameras are not on a budget.
