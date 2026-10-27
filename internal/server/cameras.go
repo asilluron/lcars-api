@@ -75,6 +75,16 @@ func cameraSnapshot(logger *slog.Logger, src *cameras.Client) handlerFunc {
 		if src == nil {
 			return &HTTPError{Code: http.StatusServiceUnavailable, Msg: cameras.NotConfigured}
 		}
+		// A live-still fallback on the proxy can take longer than the
+		// server's 15s write timeout. Clear both deadlines before waiting
+		// on the proxy; the cameras client still bounds the wait.
+		rc := http.NewResponseController(w)
+		if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+			return err
+		}
+		if err := rc.SetReadDeadline(time.Time{}); err != nil {
+			return err
+		}
 		data, err := src.Snapshot(r.Context(), r.PathValue("sn"))
 		if err != nil {
 			return cameraHTTPError(logger, err)

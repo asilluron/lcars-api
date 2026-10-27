@@ -36,7 +36,7 @@
     },
     {
       "name": "Cameras",
-      "description": "Cameras from the Eufy proxy named by `eufy.url` (`LCARS_EUFY_URL`). When that is unset, every camera operation answers `503`.\n\n`GET /cameras` is the same catalog as `lcars.cameras.list`. `stream_path` and `snapshot_path` are paths on this server. The live video is Annex-B bytes and is not sent over NATS. Closing the stream response stops that viewer. A missing snapshot is `404` and does not wake the camera."
+      "description": "Cameras from the Eufy proxy named by `eufy.url` (`LCARS_EUFY_URL`). When that is unset, every camera operation answers `503`.\n\n`GET /cameras` is the same catalog as `lcars.cameras.list`. `stream_path` and `snapshot_path` are paths on this server. The live video is Annex-B bytes and is not sent over NATS. Closing the stream response stops that viewer. A missing snapshot is `404`. The proxy prefers a retained push thumbnail and may take a short live burst when none is kept."
     },
     {
       "name": "Weather",
@@ -388,8 +388,8 @@
       "get": {
         "operationId": "getCameraSnapshot",
         "tags": ["Cameras"],
-        "summary": "Read a stored camera snapshot",
-        "description": "The latest JPEG the proxy has stored for this camera. A miss is `404` and does not wake the camera.",
+        "summary": "Read a camera snapshot",
+        "description": "A JPEG still for this camera. The proxy prefers a retained push thumbnail and may take a short live burst when none is kept. A miss is `404`. The wait is not limited by the 15 second write timeout.",
         "parameters": [
           {
             "name": "sn",
@@ -402,7 +402,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The stored JPEG.",
+            "description": "The JPEG still.",
             "headers": {
               "Cache-Control": {
                 "schema": { "type": "string" },
@@ -426,7 +426,7 @@
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "404": {
-            "description": "No stored snapshot for that camera.",
+            "description": "No still for that camera.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" },
