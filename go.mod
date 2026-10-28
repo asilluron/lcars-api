@@ -8,7 +8,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
 	github.com/nats-io/nats-server/v2 v2.15.1
-	github.com/nats-io/nats.go v1.54.0
+	github.com/nats-io/nats.go v1.55.0
 	github.com/teambition/rrule-go v1.8.2
 	google.golang.org/protobuf v1.36.12
 )
