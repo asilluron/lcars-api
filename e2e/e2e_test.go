@@ -156,6 +156,8 @@ func TestAPIDocs(t *testing.T) {
 			_, _ = w.Write([]byte{0xff, 0xd8, 0xff, 0xd9})
 		case "/v1/forecast":
 			_, _ = io.WriteString(w, `{"current":{"temperature_2m":72.2,"apparent_temperature":70.1,"weather_code":0,"wind_speed_10m":4.2},"daily":{"temperature_2m_max":[78.4],"temperature_2m_min":[55.2]}}`)
+		case "/locks/list":
+			_, _ = io.WriteString(w, `{"ok":true,"devices":[]}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -164,6 +166,8 @@ func TestAPIDocs(t *testing.T) {
 	p := startServer(t,
 		"LCARS_CALENDAR_DIR="+fixturesDir(t),
 		"LCARS_EUFY_URL="+upstream.URL,
+		"LCARS_SEAM_API_KEY=seam_test_key",
+		"LCARS_SEAM_URL="+upstream.URL,
 		"LCARS_WEATHER_LATITUDE=0",
 		"LCARS_WEATHER_LONGITUDE=0",
 		"LCARS_WEATHER_URL="+upstream.URL,

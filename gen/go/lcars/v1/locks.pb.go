@@ -207,12 +207,13 @@ func (x *Lock) GetCanUnlock() bool {
 
 // LockDoorRequest asks the server to lock a door. Send it as a request on
 // the subject "lcars.locks.lock"; the reply is a LockDoorResponse. The
-// server waits for Seam to confirm the action (or fail) before replying.
+// server asks Seam once and replies when that command is accepted (or
+// rejected immediately). It does not poll or retry a jammed bolt.
 //
 // On failure the reply has an empty body and the headers
 // "Nats-Service-Error-Code" (400 for an invalid id, 404 if Seam has no such
-// lock, 503 if locks are not configured or Seam is unreachable, 504 if
-// Seam did not finish in time, 500 otherwise) and "Nats-Service-Error".
+// lock, 503 if locks are not configured or Seam is unreachable, 500
+// otherwise) and "Nats-Service-Error".
 type LockDoorRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Seam device id from ListLocksResponse.
@@ -258,12 +259,12 @@ func (x *LockDoorRequest) GetId() string {
 	return ""
 }
 
-// LockDoorResponse confirms the lock command finished.
+// LockDoorResponse confirms the lock command was accepted.
 type LockDoorResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Seam device id that was locked.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Always true after a successful lock.
+	// Always true after the lock command is accepted.
 	Locked        bool `protobuf:"varint,2,opt,name=locked,proto3" json:"locked,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -315,12 +316,12 @@ func (x *LockDoorResponse) GetLocked() bool {
 
 // UnlockDoorRequest asks the server to unlock a door. Send it as a request
 // on the subject "lcars.locks.unlock"; the reply is an UnlockDoorResponse.
-// The server waits for Seam to confirm the action (or fail) before replying.
+// Same one-shot rule as LockDoorRequest.
 //
 // On failure the reply has an empty body and the headers
 // "Nats-Service-Error-Code" (400 for an invalid id, 404 if Seam has no such
-// lock, 503 if locks are not configured or Seam is unreachable, 504 if
-// Seam did not finish in time, 500 otherwise) and "Nats-Service-Error".
+// lock, 503 if locks are not configured or Seam is unreachable, 500
+// otherwise) and "Nats-Service-Error".
 type UnlockDoorRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Seam device id from ListLocksResponse.
@@ -366,12 +367,12 @@ func (x *UnlockDoorRequest) GetId() string {
 	return ""
 }
 
-// UnlockDoorResponse confirms the unlock command finished.
+// UnlockDoorResponse confirms the unlock command was accepted.
 type UnlockDoorResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Seam device id that was unlocked.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Always false after a successful unlock.
+	// Always false after the unlock command is accepted.
 	Locked        bool `protobuf:"varint,2,opt,name=locked,proto3" json:"locked,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,11 +17,26 @@ import (
 // clearFixtureCalendarLabel deletes the admin label for the fixture Google
 // calendar, so a name saved by a test doesn't change the fixture week for
 // later servers. The row is removed before a server starts, because a server
-// reads labels at startup.
+// reads labels at startup. Uses a background context so Cleanup still works
+// after t.Context is cancelled.
 func clearFixtureCalendarLabel(t *testing.T) {
 	t.Helper()
 	s := requireSupabase(t)
-	s.call(t, http.MethodDelete, "/rest/v1/calendar_labels?id=eq."+url.QueryEscape(fixtureGoogleID), nil)
+	req, err := http.NewRequest(http.MethodDelete, s.APIURL+"/rest/v1/calendar_labels?id=eq."+url.QueryEscape(fixtureGoogleID), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Apikey", s.SecretKey)
+	req.Header.Set("Authorization", "Bearer "+s.SecretKey)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("supabase DELETE calendar_labels: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("supabase DELETE calendar_labels = %d %s", resp.StatusCode, body)
+	}
 }
 
 func TestCalendarLabels(t *testing.T) {

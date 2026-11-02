@@ -48,9 +48,9 @@ const (
 	SubjectCamerasList = "lcars.cameras.list"
 	// SubjectLocksList answers a ListLocksRequest with a ListLocksResponse.
 	SubjectLocksList = "lcars.locks.list"
-	// SubjectLocksLock asks Seam to lock a door and waits for confirmation.
+	// SubjectLocksLock asks Seam to lock a door once.
 	SubjectLocksLock = "lcars.locks.lock"
-	// SubjectLocksUnlock asks Seam to unlock a door and waits for confirmation.
+	// SubjectLocksUnlock asks Seam to unlock a door once.
 	SubjectLocksUnlock = "lcars.locks.unlock"
 	// SubjectRemindersList answers a ListRemindersRequest with a
 	// ListRemindersResponse.

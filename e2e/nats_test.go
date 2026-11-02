@@ -311,7 +311,17 @@ func TestNATSService(t *testing.T) {
 	for _, ep := range info.Endpoints {
 		endpoints = append(endpoints, ep.Subject)
 	}
-	want := []string{subjectCalendarGet, subjectCamerasList, subjectRemindersList, subjectRemindersSet, subjectTrainingPut, subjectWeatherGet}
+	want := []string{
+		subjectCalendarGet,
+		subjectCamerasList,
+		subjectLocksList,
+		subjectLocksLock,
+		subjectLocksUnlock,
+		subjectRemindersList,
+		subjectRemindersSet,
+		subjectTrainingPut,
+		subjectWeatherGet,
+	}
 	slices.Sort(endpoints)
 	slices.Sort(want)
 	if !slices.Equal(endpoints, want) {
