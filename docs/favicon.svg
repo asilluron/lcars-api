@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
+  <title>LCARS</title>
+  <rect width="64" height="64" fill="#000"/>
+  <path d="M0 8h40a10 10 0 0 1 10 10v4H14a8 8 0 0 0-8 8v10H0V8z" fill="#ff9c00"/>
+  <rect x="54" y="8" width="10" height="14" rx="4" fill="#ffcc99"/>
+  <rect x="0" y="40" width="10" height="24" fill="#99ccff"/>
+  <rect x="14" y="48" width="36" height="10" rx="5" fill="#cc99cc"/>
+</svg>
