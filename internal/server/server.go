@@ -11,6 +11,7 @@ import (
 	"github.com/asilluron/lcars-api/internal/calendar"
 	"github.com/asilluron/lcars-api/internal/cameras"
 	"github.com/asilluron/lcars-api/internal/devices"
+	"github.com/asilluron/lcars-api/internal/locks"
 )
 
 // Deps are the data sources the handlers read from. A nil field disables the
@@ -19,6 +20,8 @@ type Deps struct {
 	Calendar *calendar.Store
 	// Cameras reads the Eufy proxy. If nil, camera endpoints answer 503.
 	Cameras *cameras.Client
+	// Locks talks to Seam. If nil, lock endpoints answer 503.
+	Locks *locks.Client
 	// NATS is the connection the API is served on, for /healthz.
 	NATS *nats.Conn
 	// Devices checks device tokens and manages them. If nil, devices don't
@@ -63,6 +66,9 @@ func addRoutes(mux router, logger *slog.Logger, deps Deps) {
 	mux.Handle("GET /cameras", requireDevice(deps.Devices, handle(logger, cameraList(logger, deps.Cameras))))
 	mux.Handle("GET /cameras/{sn}/stream", requireDevice(deps.Devices, handle(logger, cameraStream(logger, deps.Cameras))))
 	mux.Handle("GET /cameras/{sn}/snapshot", requireDevice(deps.Devices, handle(logger, cameraSnapshot(logger, deps.Cameras))))
+	mux.Handle("GET /locks", requireDevice(deps.Devices, handle(logger, lockList(logger, deps.Locks))))
+	mux.Handle("POST /locks/{id}/lock", requireDevice(deps.Devices, handle(logger, lockDoor(logger, deps.Locks))))
+	mux.Handle("POST /locks/{id}/unlock", requireDevice(deps.Devices, handle(logger, unlockDoor(logger, deps.Locks))))
 
 	// The admin page, and the API it uses to manage device tokens and calendar
 	// names.

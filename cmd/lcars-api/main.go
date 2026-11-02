@@ -21,6 +21,7 @@ import (
 	"github.com/asilluron/lcars-api/internal/cameras"
 	"github.com/asilluron/lcars-api/internal/config"
 	"github.com/asilluron/lcars-api/internal/devices"
+	"github.com/asilluron/lcars-api/internal/locks"
 	"github.com/asilluron/lcars-api/internal/natsapi"
 	"github.com/asilluron/lcars-api/internal/server"
 	"github.com/asilluron/lcars-api/internal/supabase"
@@ -131,9 +132,22 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		logger.Info("cameras disabled: eufy.url is not set")
 	}
 
+	var doorLocks *locks.Client
+	if cfg.Seam.Enabled() {
+		base := cfg.Seam.URL
+		if base == "" {
+			base = locks.DefaultURL
+		}
+		doorLocks = locks.New(base, cfg.Seam.APIKey)
+		logger.Info("locks enabled")
+	} else {
+		logger.Info("locks disabled: seam.api_key is not set")
+	}
+
 	svc, err := natsapi.Start(ctx, bus.Conn, logger, server.Version(), natsapi.Deps{
 		Calendar: cal,
 		Cameras:  cams,
+		Locks:    doorLocks,
 		Training: audio,
 	})
 	if err != nil {
@@ -156,6 +170,7 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		Handler: server.New(logger, server.Deps{
 			Calendar:        cal,
 			Cameras:         cams,
+			Locks:           doorLocks,
 			NATS:            bus.Conn,
 			Devices:         tokens,
 			Admins:          admins,

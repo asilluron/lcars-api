@@ -51,6 +51,7 @@ type Config struct {
 	NATS     NATS
 	Supabase Supabase
 	Eufy     Eufy
+	Seam     Seam
 }
 
 // Eufy is the camera proxy (the eufy/ process). When URL is set, devices can
@@ -60,6 +61,19 @@ type Eufy struct {
 	// to disable cameras.
 	URL string
 }
+
+// Seam is the smart-lock API (https://www.seam.co). When APIKey is set,
+// devices can list locks and lock or unlock them through this server.
+type Seam struct {
+	// APIKey is the Seam API key (seam_...), or "" to disable locks.
+	APIKey string
+	// URL is the Seam API base URL. Empty means https://connect.getseam.com.
+	// Override it only for tests.
+	URL string
+}
+
+// Enabled reports whether Seam is configured.
+func (s Seam) Enabled() bool { return s.APIKey != "" }
 
 // Supabase configures the database that stores device tokens and the admin
 // users who manage them. When URL is set, devices must authenticate with a
@@ -262,6 +276,24 @@ var settings = []setting{
 		c.Eufy.URL = strings.TrimSuffix(v, "/")
 		return nil
 	}},
+	{"seam.api_key", "LCARS_SEAM_API_KEY", func(c *Config, v, _ string) error {
+		c.Seam.APIKey = v
+		return nil
+	}},
+	{"seam.url", "LCARS_SEAM_URL", func(c *Config, v, _ string) error {
+		u, err := url.Parse(v)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("want an http(s) URL like https://connect.getseam.com, got %q", v)
+		}
+		if u.User != nil {
+			return errors.New("must not contain credentials; set seam.api_key instead")
+		}
+		if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+			return errors.New("want a base URL with no path, such as https://connect.getseam.com")
+		}
+		c.Seam.URL = strings.TrimSuffix(v, "/")
+		return nil
+	}},
 }
 
 // EnvVars returns the environment variable of every setting.
@@ -336,6 +368,9 @@ func Load(getenv func(string) string) (Config, error) {
 	if (cfg.Supabase.URL == "") != (cfg.Supabase.SecretKey == "") {
 		return Config{}, errors.New("supabase.url and supabase.secret_key (LCARS_SUPABASE_URL, " +
 			"LCARS_SUPABASE_SECRET_KEY) must be set together")
+	}
+	if cfg.Seam.URL != "" && cfg.Seam.APIKey == "" {
+		return Config{}, errors.New("seam.url needs seam.api_key (LCARS_SEAM_URL, LCARS_SEAM_API_KEY)")
 	}
 	return cfg, nil
 }

@@ -24,6 +24,7 @@ import (
 
 	"github.com/asilluron/lcars-api/internal/calendar"
 	"github.com/asilluron/lcars-api/internal/cameras"
+	"github.com/asilluron/lcars-api/internal/locks"
 	"github.com/asilluron/lcars-api/internal/training"
 )
 
@@ -43,16 +44,29 @@ const (
 	// SubjectCamerasList answers a ListCamerasRequest with a
 	// ListCamerasResponse. The video itself is fetched over HTTP.
 	SubjectCamerasList = "lcars.cameras.list"
+	// SubjectLocksList answers a ListLocksRequest with a ListLocksResponse.
+	SubjectLocksList = "lcars.locks.list"
+	// SubjectLocksLock asks Seam to lock a door and waits for confirmation.
+	SubjectLocksLock = "lcars.locks.lock"
+	// SubjectLocksUnlock asks Seam to unlock a door and waits for confirmation.
+	SubjectLocksUnlock = "lcars.locks.unlock"
 	// SubjectTrainingPut appends a chunk of microphone PCM to the training
-	// directory. It is the one subject that writes, and only inside that
-	// directory.
+	// directory. It writes only inside that directory. Lock subjects talk to
+	// Seam; they do not write files on the host.
 	SubjectTrainingPut = "lcars.training.put"
 )
 
 var (
 	// Requests lists the subjects the API answers requests on. Devices may
 	// publish to them.
-	Requests = []string{SubjectCalendarGet, SubjectCamerasList, SubjectTrainingPut}
+	Requests = []string{
+		SubjectCalendarGet,
+		SubjectCamerasList,
+		SubjectLocksList,
+		SubjectLocksLock,
+		SubjectLocksUnlock,
+		SubjectTrainingPut,
+	}
 	// Events lists the subjects the API publishes events to. Devices may
 	// subscribe to them.
 	Events = []string{SubjectCalendarUpdated}
@@ -66,6 +80,7 @@ var (
 type Deps struct {
 	Calendar *calendar.Store
 	Cameras  *cameras.Client
+	Locks    *locks.Client
 	Training *training.Writer
 }
 
@@ -104,6 +119,30 @@ func addEndpoints(ctx context.Context, svc micro.Service, logger *slog.Logger, d
 		micro.WithEndpointMetadata(map[string]string{
 			"request":  "lcars.v1.ListCamerasRequest",
 			"response": "lcars.v1.ListCamerasResponse",
+		})); err != nil {
+		return err
+	}
+	if err := svc.AddEndpoint("locks_list", handle(logger, locksList(ctx, logger, deps.Locks)),
+		micro.WithEndpointSubject(SubjectLocksList),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.ListLocksRequest",
+			"response": "lcars.v1.ListLocksResponse",
+		})); err != nil {
+		return err
+	}
+	if err := svc.AddEndpoint("locks_lock", handle(logger, locksLock(ctx, logger, deps.Locks)),
+		micro.WithEndpointSubject(SubjectLocksLock),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.LockDoorRequest",
+			"response": "lcars.v1.LockDoorResponse",
+		})); err != nil {
+		return err
+	}
+	if err := svc.AddEndpoint("locks_unlock", handle(logger, locksUnlock(ctx, logger, deps.Locks)),
+		micro.WithEndpointSubject(SubjectLocksUnlock),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.UnlockDoorRequest",
+			"response": "lcars.v1.UnlockDoorResponse",
 		})); err != nil {
 		return err
 	}

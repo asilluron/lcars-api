@@ -150,6 +150,97 @@ pub struct Camera {
     #[prost(string, tag="5")]
     pub snapshot_path: ::prost::alloc::string::String,
 }
+/// ListLocksRequest asks for the smart locks the server can control through
+/// Seam. Send it as a request on the subject "lcars.locks.list"; the reply is
+/// a ListLocksResponse. An empty message (or an empty body) is the whole
+/// request.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid request, 503 if locks are
+/// not configured or Seam is unreachable, 500 otherwise) and
+/// "Nats-Service-Error" (a message).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListLocksRequest {
+}
+/// ListLocksResponse is the locks Seam currently reports. The order is Seam's
+/// order.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListLocksResponse {
+    #[prost(message, repeated, tag="1")]
+    pub locks: ::prost::alloc::vec::Vec<Lock>,
+}
+/// Lock is one smart lock from Seam.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Lock {
+    /// Seam device id (a UUID). Use this with lcars.locks.lock and
+    /// lcars.locks.unlock.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    /// Display name from Seam, which may be empty.
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    /// True when the lock reports it is locked. False when unlocked, or when
+    /// the lock is offline and Seam has no current state.
+    #[prost(bool, tag="3")]
+    pub locked: bool,
+    /// True when Seam reports the lock is online.
+    #[prost(bool, tag="4")]
+    pub online: bool,
+    /// True when this lock can be locked remotely.
+    #[prost(bool, tag="5")]
+    pub can_lock: bool,
+    /// True when this lock can be unlocked remotely.
+    #[prost(bool, tag="6")]
+    pub can_unlock: bool,
+}
+/// LockDoorRequest asks the server to lock a door. Send it as a request on
+/// the subject "lcars.locks.lock"; the reply is a LockDoorResponse. The
+/// server waits for Seam to confirm the action (or fail) before replying.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid id, 404 if Seam has no such
+/// lock, 503 if locks are not configured or Seam is unreachable, 504 if
+/// Seam did not finish in time, 500 otherwise) and "Nats-Service-Error".
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LockDoorRequest {
+    /// Seam device id from ListLocksResponse.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+}
+/// LockDoorResponse confirms the lock command finished.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LockDoorResponse {
+    /// Seam device id that was locked.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    /// Always true after a successful lock.
+    #[prost(bool, tag="2")]
+    pub locked: bool,
+}
+/// UnlockDoorRequest asks the server to unlock a door. Send it as a request
+/// on the subject "lcars.locks.unlock"; the reply is an UnlockDoorResponse.
+/// The server waits for Seam to confirm the action (or fail) before replying.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid id, 404 if Seam has no such
+/// lock, 503 if locks are not configured or Seam is unreachable, 504 if
+/// Seam did not finish in time, 500 otherwise) and "Nats-Service-Error".
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UnlockDoorRequest {
+    /// Seam device id from ListLocksResponse.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+}
+/// UnlockDoorResponse confirms the unlock command finished.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UnlockDoorResponse {
+    /// Seam device id that was unlocked.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    /// Always false after a successful unlock.
+    #[prost(bool, tag="2")]
+    pub locked: bool,
+}
 /// PutTrainingAudioRequest is one chunk of microphone audio. Send it as a
 /// request on the subject "lcars.training.put"; the reply is a
 /// PutTrainingAudioResponse.

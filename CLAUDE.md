@@ -68,11 +68,12 @@ user rather than trying to fix history yourself.
 
 Authentication is optional (off without Supabase), so:
 
-- Device endpoints and NATS subjects are read-only, except `lcars.training.put`.
-  That subject appends PCM to hourly WAV files inside the directory set by
-  `training.dir`, under a file name the server chooses. Don't add any other
-  HTTP endpoint or NATS handler that writes files, runs commands, or changes
-  the host.
+- Device endpoints and NATS subjects are read-only, except `lcars.training.put`
+  and the lock subjects (`lcars.locks.lock`, `lcars.locks.unlock`). Training
+  appends PCM to hourly WAV files inside the directory set by `training.dir`,
+  under a file name the server chooses. Lock subjects call Seam; they do not
+  write files on the host. Don't add any other HTTP endpoint or NATS handler
+  that writes files, runs commands, or changes the host.
 - The admin API (`/admin/api/...`) is the only place that changes anything
   else, and it only manages device tokens in Supabase. Every admin operation
   except sign-in must go through `requireAdmin`; every device endpoint through

@@ -137,6 +137,21 @@ control.
 
 `make eufy` type-checks and tests the proxy without an Eufy account.
 
+## Locks
+
+Smart locks are controlled through [Seam](https://www.seam.co). Set
+`seam.api_key` (or `LCARS_SEAM_API_KEY`) to a Seam API key. Leave it unset
+and the lock endpoints answer `503`. The key stays on this machine; devices
+talk only to lcars-api. Optionally set `seam.url` (default
+`https://connect.getseam.com`) to point at a mock for tests.
+
+A device lists locks with `lcars.locks.list` or `GET /locks`. Lock and unlock
+with `lcars.locks.lock` / `lcars.locks.unlock`, or
+`POST /locks/{id}/lock` / `POST /locks/{id}/unlock`. Those wait for Seam to
+confirm the action (or fail) before answering, up to about 25 seconds. Ids
+are Seam device UUIDs from the list. All need a device token when
+authentication is on.
+
 ## NATS API
 
 Devices connect to `nats://<server>:4222`, with their device token as the
@@ -149,6 +164,9 @@ message from [`proto/lcars/v1`](proto/lcars/v1), which documents each field.
 | `lcars.calendar.get`     | request/reply | `GetCalendarRequest` → `GetCalendarResponse`. See [Calendar](#calendar). |
 | `lcars.calendar.updated` | event         | `CalendarUpdated`, published when the `.ics` files change. Request the calendar again when you get one. |
 | `lcars.cameras.list`     | request/reply | `ListCamerasRequest` → `ListCamerasResponse`. See [Cameras](#cameras). An empty body is the whole request. |
+| `lcars.locks.list`       | request/reply | `ListLocksRequest` → `ListLocksResponse`. See [Locks](#locks). An empty body is the whole request. |
+| `lcars.locks.lock`       | request/reply | `LockDoorRequest` → `LockDoorResponse`. See [Locks](#locks). |
+| `lcars.locks.unlock`     | request/reply | `UnlockDoorRequest` → `UnlockDoorResponse`. See [Locks](#locks). |
 | `lcars.training.put`     | request/reply | `PutTrainingAudioRequest` → `PutTrainingAudioResponse`. See [Training audio](#training-audio). |
 
 - **Errors.** A failed request gets a reply with an empty body and two
@@ -205,6 +223,9 @@ Full HTTP reference: run the server and open <http://localhost:8080/docs>.
 | GET    | `/cameras`     | JSON version of `lcars.cameras.list`. See [Cameras](#cameras). Needs a device token when authentication is on. |
 | GET    | `/cameras/{sn}/stream` | Live Annex-B video for that camera. Stays open until the client closes it. Needs a device token when authentication is on. |
 | GET    | `/cameras/{sn}/snapshot` | Latest stored JPEG for that camera. `404` does not wake it. Needs a device token when authentication is on. |
+| GET    | `/locks`       | JSON version of `lcars.locks.list`. See [Locks](#locks). Needs a device token when authentication is on. |
+| POST   | `/locks/{id}/lock` | Lock a door (same as `lcars.locks.lock`). Waits for Seam. Needs a device token when authentication is on. |
+| POST   | `/locks/{id}/unlock` | Unlock a door (same as `lcars.locks.unlock`). Waits for Seam. Needs a device token when authentication is on. |
 | GET    | `/openapi.json` | OpenAPI 3.1 document for the HTTP API.            |
 | GET    | `/docs`         | HTTP API reference ([Redoc](https://github.com/Redocly/redoc)) rendered from `/openapi.json`. |
 | GET    | `/admin/`       | The [admin page](#devices-and-the-admin-page).    |
@@ -343,6 +364,8 @@ startup.
 | `supabase.secret_key`       | `LCARS_SUPABASE_SECRET_KEY`       | unset            | Supabase secret key (`sb_secret_...`) or legacy `service_role` key. Keep it secret |
 | `supabase.refresh_interval` | `LCARS_SUPABASE_REFRESH_INTERVAL` | `1m`             | How often to re-read device tokens, to pick up changes made directly in the database. Minimum `1s` |
 | `eufy.url`              | `LCARS_EUFY_URL`                  | unset (disabled) | Base URL of the Eufy camera proxy, e.g. `http://127.0.0.1:3000`. No path and no credentials. See [Cameras](#cameras) |
+| `seam.api_key`          | `LCARS_SEAM_API_KEY`              | unset (disabled) | Seam API key (`seam_...`). Turns on lock list/lock/unlock. Keep it secret. See [Locks](#locks) |
+| `seam.url`              | `LCARS_SEAM_URL`                  | `https://connect.getseam.com` | Seam API base URL. Needs `seam.api_key`. Override only for tests |
 
 ## Docker
 
@@ -379,6 +402,7 @@ internal/supabase/     minimal Supabase client: Auth sign-in and the device_toke
 internal/adminui/      the built admin page, embedded (make admin-ui)
 internal/calendar/     reads .ics files, expands recurring events, groups them by day
 internal/training/     appends training PCM to hourly WAV files under training.dir
+internal/locks/        Seam smart-lock client: list, lock, unlock
 internal/config/       config file and environment variables
 internal/server/       HTTP routes, handlers, middleware
 internal/server/api/   OpenAPI document and Redoc docs page (embedded)
