@@ -2,14 +2,12 @@ package locks
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 const testID = "11111111-1111-1111-1111-111111111111"
@@ -50,7 +48,7 @@ func TestList(t *testing.T) {
 	}
 }
 
-func TestLockDoorWaitsForSuccess(t *testing.T) {
+func TestLockDoorAcceptsPendingWithoutPolling(t *testing.T) {
 	var polls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -68,19 +66,8 @@ func TestLockDoorWaitsForSuccess(t *testing.T) {
 				}
 			}`)
 		case "/action_attempts/get":
-			n := polls.Add(1)
-			status := "pending"
-			if n >= 2 {
-				status = "success"
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"ok": true,
-				"action_attempt": map[string]any{
-					"action_attempt_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-					"action_type":       "LOCK_DOOR",
-					"status":            status,
-				},
-			})
+			polls.Add(1)
+			http.NotFound(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -88,12 +75,33 @@ func TestLockDoorWaitsForSuccess(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "key")
-	c.sleep = func(context.Context, time.Duration) error { return nil }
 	if err := c.LockDoor(context.Background(), testID); err != nil {
 		t.Fatal(err)
 	}
-	if polls.Load() < 2 {
-		t.Fatalf("polls = %d, want at least 2", polls.Load())
+	if polls.Load() != 0 {
+		t.Fatalf("polled action_attempts %d times; want 0", polls.Load())
+	}
+}
+
+func TestLockDoorSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/locks/lock_door" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, `{
+			"ok": true,
+			"action_attempt": {
+				"action_attempt_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+				"status": "success"
+			}
+		}`)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "key")
+	if err := c.LockDoor(context.Background(), testID); err != nil {
+		t.Fatal(err)
 	}
 }
 

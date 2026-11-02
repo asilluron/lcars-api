@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/asilluron/lcars-api/internal/locks"
 )
@@ -30,11 +29,6 @@ func lockDoor(logger *slog.Logger, src *locks.Client) handlerFunc {
 		if src == nil {
 			return &HTTPError{Code: http.StatusServiceUnavailable, Msg: locks.NotConfigured}
 		}
-		// Seam can take longer than the server's 15s write timeout.
-		rc := http.NewResponseController(w)
-		if err := rc.SetWriteDeadline(time.Time{}); err != nil {
-			return err
-		}
 		if err := src.LockDoor(r.Context(), r.PathValue("id")); err != nil {
 			return lockHTTPError(logger, err)
 		}
@@ -49,10 +43,6 @@ func unlockDoor(logger *slog.Logger, src *locks.Client) handlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		if src == nil {
 			return &HTTPError{Code: http.StatusServiceUnavailable, Msg: locks.NotConfigured}
-		}
-		rc := http.NewResponseController(w)
-		if err := rc.SetWriteDeadline(time.Time{}); err != nil {
-			return err
 		}
 		if err := src.UnlockDoor(r.Context(), r.PathValue("id")); err != nil {
 			return lockHTTPError(logger, err)

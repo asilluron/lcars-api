@@ -147,10 +147,10 @@ talk only to lcars-api. Optionally set `seam.url` (default
 
 A device lists locks with `lcars.locks.list` or `GET /locks`. Lock and unlock
 with `lcars.locks.lock` / `lcars.locks.unlock`, or
-`POST /locks/{id}/lock` / `POST /locks/{id}/unlock`. Those wait for Seam to
-confirm the action (or fail) before answering, up to about 25 seconds. Ids
-are Seam device UUIDs from the list. All need a device token when
-authentication is on.
+`POST /locks/{id}/lock` / `POST /locks/{id}/unlock`. Each call asks Seam once
+and returns when Seam accepts the command (or rejects it immediately); the
+server does not poll or re-issue while a bolt is jammed. Ids are Seam device
+UUIDs from the list. All need a device token when authentication is on.
 
 ## Weather
 

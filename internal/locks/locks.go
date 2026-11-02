@@ -26,9 +26,6 @@ const NotConfigured = "locks are not configured: set seam.api_key in the config 
 const (
 	maxBodyBytes   = 1 << 20
 	requestTimeout = 15 * time.Second
-	// actionTimeout is how long Lock and Unlock wait for Seam to finish.
-	actionTimeout = 25 * time.Second
-	pollInterval  = 500 * time.Millisecond
 )
 
 // A Seam device_id is a UUID.
@@ -65,9 +62,7 @@ type Lock struct {
 type Client struct {
 	base   string
 	apiKey string
-	http   *http.Client
-	// sleep is replaced in tests so polling does not wait real time.
-	sleep func(context.Context, time.Duration) error
+	http *http.Client
 }
 
 // New returns a client for the Seam API at base (such as DefaultURL) using
@@ -82,7 +77,6 @@ func New(base, apiKey string) *Client {
 				return http.ErrUseLastResponse
 			},
 		},
-		sleep: sleepCtx,
 	}
 }
 
@@ -111,14 +105,15 @@ func (c *Client) List(ctx context.Context) ([]Lock, error) {
 	return locks, nil
 }
 
-// LockDoor asks Seam to lock the device and waits until the action finishes
-// or ctx (or actionTimeout) expires.
+// LockDoor asks Seam to lock the device once. It does not poll or re-issue:
+// a jammed bolt will not finish by waiting, and a second command while the
+// first is still running only makes the motor grind again.
 func (c *Client) LockDoor(ctx context.Context, id string) error {
 	return c.act(ctx, id, "/locks/lock_door")
 }
 
-// UnlockDoor asks Seam to unlock the device and waits until the action
-// finishes or ctx (or actionTimeout) expires.
+// UnlockDoor asks Seam to unlock the device once. Same one-shot rule as
+// LockDoor.
 func (c *Client) UnlockDoor(ctx context.Context, id string) error {
 	return c.act(ctx, id, "/locks/unlock_door")
 }
@@ -127,8 +122,6 @@ func (c *Client) act(ctx context.Context, id, path string) error {
 	if !deviceIDPattern.MatchString(id) {
 		return &StatusError{Code: http.StatusBadRequest, Msg: "invalid lock id"}
 	}
-	ctx, cancel := context.WithTimeout(ctx, actionTimeout)
-	defer cancel()
 
 	var out struct {
 		ActionAttempt actionAttempt `json:"action_attempt"`
@@ -136,52 +129,32 @@ func (c *Client) act(ctx context.Context, id, path string) error {
 	if err := c.post(ctx, path, map[string]any{"device_id": id}, &out); err != nil {
 		return err
 	}
-	return c.wait(ctx, out.ActionAttempt)
+	return result(out.ActionAttempt)
 }
 
-func (c *Client) wait(ctx context.Context, attempt actionAttempt) error {
-	for {
-		switch attempt.Status {
-		case "success":
-			return nil
-		case "error":
-			msg := "lock action failed"
-			if attempt.Error != nil && attempt.Error.Message != "" {
-				// Keep the device-facing message generic; details stay in Err.
-				return &StatusError{
-					Code: http.StatusBadGateway,
-					Msg:  msg,
-					Err:  fmt.Errorf("seam action %s: %s", attempt.Error.Type, attempt.Error.Message),
-				}
-			}
-			return &StatusError{Code: http.StatusBadGateway, Msg: msg}
-		case "pending", "":
-		default:
+// result accepts Seam's immediate reply. "pending" means the command was
+// accepted; we leave the outcome to a later list refresh instead of polling.
+func result(attempt actionAttempt) error {
+	switch attempt.Status {
+	case "success", "pending", "":
+		return nil
+	case "error":
+		msg := "lock action failed"
+		if attempt.Error != nil && attempt.Error.Message != "" {
+			// Keep the device-facing message generic; details stay in Err.
 			return &StatusError{
 				Code: http.StatusBadGateway,
-				Msg:  "lock action failed",
-				Err:  fmt.Errorf("seam action status %q", attempt.Status),
+				Msg:  msg,
+				Err:  fmt.Errorf("seam action %s: %s", attempt.Error.Type, attempt.Error.Message),
 			}
 		}
-		if attempt.ActionAttemptID == "" {
-			return &StatusError{
-				Code: http.StatusBadGateway,
-				Msg:  "lock action failed",
-				Err:  fmt.Errorf("seam action attempt missing id"),
-			}
+		return &StatusError{Code: http.StatusBadGateway, Msg: msg}
+	default:
+		return &StatusError{
+			Code: http.StatusBadGateway,
+			Msg:  "lock action failed",
+			Err:  fmt.Errorf("seam action status %q", attempt.Status),
 		}
-		if err := c.sleep(ctx, pollInterval); err != nil {
-			return &StatusError{Code: http.StatusGatewayTimeout, Msg: "lock action timed out", Err: err}
-		}
-		var out struct {
-			ActionAttempt actionAttempt `json:"action_attempt"`
-		}
-		if err := c.post(ctx, "/action_attempts/get", map[string]any{
-			"action_attempt_id": attempt.ActionAttemptID,
-		}, &out); err != nil {
-			return err
-		}
-		attempt = out.ActionAttempt
 	}
 }
 
@@ -266,17 +239,6 @@ type actionAttempt struct {
 
 func unavailableErr(err error) error {
 	return &StatusError{Code: http.StatusServiceUnavailable, Msg: "locks are unavailable", Err: err}
-}
-
-func sleepCtx(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
 }
 
 func truncate(b []byte) string {

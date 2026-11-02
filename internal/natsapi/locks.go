@@ -44,8 +44,7 @@ func locksList(ctx context.Context, logger *slog.Logger, src *locks.Client) hand
 	}
 }
 
-// locksLock answers lcars.locks.lock by asking Seam to lock the door and
-// waiting for confirmation.
+// locksLock answers lcars.locks.lock by asking Seam to lock the door once.
 func locksLock(ctx context.Context, logger *slog.Logger, src *locks.Client) handlerFunc {
 	return func(req micro.Request) (proto.Message, error) {
 		var in lcarsv1.LockDoorRequest
@@ -62,8 +61,7 @@ func locksLock(ctx context.Context, logger *slog.Logger, src *locks.Client) hand
 	}
 }
 
-// locksUnlock answers lcars.locks.unlock by asking Seam to unlock the door
-// and waiting for confirmation.
+// locksUnlock answers lcars.locks.unlock by asking Seam to unlock the door once.
 func locksUnlock(ctx context.Context, logger *slog.Logger, src *locks.Client) handlerFunc {
 	return func(req micro.Request) (proto.Message, error) {
 		var in lcarsv1.UnlockDoorRequest

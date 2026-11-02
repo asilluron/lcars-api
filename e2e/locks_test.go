@@ -176,6 +176,41 @@ func TestLocks(t *testing.T) {
 	}
 }
 
+func TestLocksPendingIsOneShot(t *testing.T) {
+	var polls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/locks/lock_door":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok": true,
+				"action_attempt": map[string]any{
+					"action_attempt_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+					"action_type":       "LOCK_DOOR",
+					"status":            "pending",
+				},
+			})
+		case "/action_attempts/get":
+			polls.Add(1)
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	p := startServer(t,
+		"LCARS_SEAM_API_KEY=seam_test_key",
+		"LCARS_SEAM_URL="+upstream.URL,
+	)
+	lock := mustDo(t, http.MethodPost, p.url("/locks/"+testLockID+"/lock"))
+	if lock.StatusCode != http.StatusOK {
+		t.Fatalf("POST lock pending = %d %s", lock.StatusCode, lock.body)
+	}
+	if polls.Load() != 0 {
+		t.Fatalf("polled action_attempts %d times; want 0", polls.Load())
+	}
+}
+
 func TestLocksDisabled(t *testing.T) {
 	p := startServer(t)
 	if !p.hasLog(map[string]any{"msg": "locks disabled: seam.api_key is not set"}) {
