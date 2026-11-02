@@ -12,6 +12,8 @@ import (
 	"github.com/asilluron/lcars-api/internal/cameras"
 	"github.com/asilluron/lcars-api/internal/devices"
 	"github.com/asilluron/lcars-api/internal/locks"
+	"github.com/asilluron/lcars-api/internal/reminders"
+	"github.com/asilluron/lcars-api/internal/weather"
 )
 
 // Deps are the data sources the handlers read from. A nil field disables the
@@ -22,6 +24,10 @@ type Deps struct {
 	Cameras *cameras.Client
 	// Locks talks to Seam. If nil, lock endpoints answer 503.
 	Locks *locks.Client
+	// Reminders is the to-do list. If nil, reminder endpoints answer 503.
+	Reminders *reminders.Store
+	// Weather reads the forecast service. If nil, GET /weather answers 503.
+	Weather *weather.Client
 	// NATS is the connection the API is served on, for /healthz.
 	NATS *nats.Conn
 	// Devices checks device tokens and manages them. If nil, devices don't
@@ -69,9 +75,12 @@ func addRoutes(mux router, logger *slog.Logger, deps Deps) {
 	mux.Handle("GET /locks", requireDevice(deps.Devices, handle(logger, lockList(logger, deps.Locks))))
 	mux.Handle("POST /locks/{id}/lock", requireDevice(deps.Devices, handle(logger, lockDoor(logger, deps.Locks))))
 	mux.Handle("POST /locks/{id}/unlock", requireDevice(deps.Devices, handle(logger, unlockDoor(logger, deps.Locks))))
+	mux.Handle("GET /reminders", requireDevice(deps.Devices, handle(logger, listReminders(deps.Reminders))))
+	mux.Handle("POST /reminders/{id}", requireDevice(deps.Devices, handle(logger, setReminder(deps.Reminders))))
+	mux.Handle("GET /weather", requireDevice(deps.Devices, handle(logger, weatherHandler(logger, deps.Weather))))
 
-	// The admin page, and the API it uses to manage device tokens and calendar
-	// names.
+	// The admin page, and the API it uses to manage device tokens, calendars,
+	// and reminders.
 	mux.Handle("GET /admin/", handle(logger, adminPage(adminFiles, adminBuilt)))
 	mux.Handle("POST /admin/api/session", handle(logger, adminSignIn(logger, deps)))
 	mux.Handle("GET /admin/api/tokens", handle(logger, requireAdmin(logger, deps, listTokens(logger, deps.Devices))))
@@ -80,4 +89,8 @@ func addRoutes(mux router, logger *slog.Logger, deps Deps) {
 		handle(logger, requireAdmin(logger, deps, revokeToken(logger, deps.Devices))))
 	mux.Handle("GET /admin/api/calendars", handle(logger, requireAdmin(logger, deps, listCalendars(logger, deps))))
 	mux.Handle("PUT /admin/api/calendars", handle(logger, requireAdmin(logger, deps, saveCalendar(logger, deps))))
+	mux.Handle("GET /admin/api/reminders", handle(logger, requireAdmin(logger, deps, listRemindersAdmin(deps.Reminders))))
+	mux.Handle("POST /admin/api/reminders", handle(logger, requireAdmin(logger, deps, createReminder(logger, deps.Reminders))))
+	mux.Handle("DELETE /admin/api/reminders/{id}",
+		handle(logger, requireAdmin(logger, deps, deleteReminder(logger, deps.Reminders))))
 }

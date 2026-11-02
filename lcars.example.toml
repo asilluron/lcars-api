@@ -100,11 +100,12 @@
 # tls_dir = "/srv/lcars/nats-tls"
 
 [supabase]
-# Device tokens and the admins who manage them are stored in Supabase (a
-# local one started with `supabase start` in this repository). When these
-# are set, devices must authenticate with a token (HTTP Basic auth, or
-# user/password on NATS), and the admin page at /admin/ is enabled. Leave
-# them unset to run without authentication.
+# Device tokens, the admins who manage them, and the reminder list are stored
+# in Supabase (a local one started with `supabase start` in this repository).
+# When these are set, devices must authenticate with a token (HTTP Basic
+# auth, or user/password on NATS), the admin page at /admin/ is enabled, and
+# reminders can be added, removed, and marked done. Leave them unset to run
+# without authentication; reminders are off too.
 #
 # `supabase status` prints both values. The secret key grants full access to
 # the database: keep it in this file (which is gitignored) or the environment,
@@ -145,3 +146,18 @@
 # for tests.
 # Env: LCARS_SEAM_URL
 # url = "https://connect.getseam.com"
+
+[weather]
+# Where to read the forecast for lcars.weather.get and GET /weather, as
+# decimal degrees. Set both, or neither. The values are sent to the forecast
+# service and are not logged. Leave them unset to disable weather.
+# Env: LCARS_WEATHER_LATITUDE
+# latitude = "0.0"
+
+# Env: LCARS_WEATHER_LONGITUDE
+# longitude = "0.0"
+
+# Forecast service. The default is Open-Meteo and needs no key. Use this to
+# point tests or a mirror at another base URL. No path and no credentials.
+# Env: LCARS_WEATHER_URL
+# url = "https://api.open-meteo.com"

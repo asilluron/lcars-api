@@ -140,7 +140,7 @@ func (c *Client) OpenStream(ctx context.Context, sn string) (io.ReadCloser, erro
 	return resp.Body, nil
 }
 
-// Snapshot reads the latest stored JPEG for sn. A miss is a 404.
+// Snapshot reads a JPEG still for sn from the proxy. A miss is a 404.
 func (c *Client) Snapshot(ctx context.Context, sn string) ([]byte, error) {
 	if !serialPattern.MatchString(sn) {
 		return nil, &StatusError{Code: http.StatusBadRequest, Msg: "invalid serial"}

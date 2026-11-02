@@ -25,7 +25,9 @@ import (
 	"github.com/asilluron/lcars-api/internal/calendar"
 	"github.com/asilluron/lcars-api/internal/cameras"
 	"github.com/asilluron/lcars-api/internal/locks"
+	"github.com/asilluron/lcars-api/internal/reminders"
 	"github.com/asilluron/lcars-api/internal/training"
+	"github.com/asilluron/lcars-api/internal/weather"
 )
 
 // ServiceName is the NATS service name, for $SRV.PING.lcars and friends.
@@ -50,10 +52,21 @@ const (
 	SubjectLocksLock = "lcars.locks.lock"
 	// SubjectLocksUnlock asks Seam to unlock a door and waits for confirmation.
 	SubjectLocksUnlock = "lcars.locks.unlock"
+	// SubjectRemindersList answers a ListRemindersRequest with a
+	// ListRemindersResponse.
+	SubjectRemindersList = "lcars.reminders.list"
+	// SubjectRemindersSet answers a SetReminderRequest with a
+	// ListRemindersResponse of the list after the change.
+	SubjectRemindersSet = "lcars.reminders.set"
+	// SubjectRemindersUpdated carries a RemindersUpdated event whenever a
+	// reminder is added, removed, or marked done or open.
+	SubjectRemindersUpdated = "lcars.reminders.updated"
 	// SubjectTrainingPut appends a chunk of microphone PCM to the training
-	// directory. It writes only inside that directory. Lock subjects talk to
-	// Seam; they do not write files on the host.
+	// directory. Lock subjects talk to Seam; they do not write files on the
+	// host. Reminder set only flips a flag in Supabase.
 	SubjectTrainingPut = "lcars.training.put"
+	// SubjectWeatherGet answers a GetWeatherRequest with a GetWeatherResponse.
+	SubjectWeatherGet = "lcars.weather.get"
 )
 
 var (
@@ -65,11 +78,14 @@ var (
 		SubjectLocksList,
 		SubjectLocksLock,
 		SubjectLocksUnlock,
+		SubjectRemindersList,
+		SubjectRemindersSet,
 		SubjectTrainingPut,
+		SubjectWeatherGet,
 	}
 	// Events lists the subjects the API publishes events to. Devices may
 	// subscribe to them.
-	Events = []string{SubjectCalendarUpdated}
+	Events = []string{SubjectCalendarUpdated, SubjectRemindersUpdated}
 	// Subjects lists every subject the API answers requests on or publishes
 	// to.
 	Subjects = slices.Concat(Requests, Events)
@@ -78,10 +94,12 @@ var (
 // Deps are the data sources the handlers read from. A nil field makes the
 // endpoints that need it answer 503.
 type Deps struct {
-	Calendar *calendar.Store
-	Cameras  *cameras.Client
-	Locks    *locks.Client
-	Training *training.Writer
+	Calendar  *calendar.Store
+	Cameras   *cameras.Client
+	Locks     *locks.Client
+	Reminders *reminders.Store
+	Training  *training.Writer
+	Weather   *weather.Client
 }
 
 // Start registers the service on nc. version is the build version; it is
@@ -146,11 +164,35 @@ func addEndpoints(ctx context.Context, svc micro.Service, logger *slog.Logger, d
 		})); err != nil {
 		return err
 	}
-	return svc.AddEndpoint("training_put", handle(logger, trainingPut(deps.Training, logger)),
+	if err := svc.AddEndpoint("reminders_list", handle(logger, remindersList(ctx, deps.Reminders)),
+		micro.WithEndpointSubject(SubjectRemindersList),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.ListRemindersRequest",
+			"response": "lcars.v1.ListRemindersResponse",
+		})); err != nil {
+		return err
+	}
+	if err := svc.AddEndpoint("reminders_set", handle(logger, remindersSet(ctx, deps.Reminders)),
+		micro.WithEndpointSubject(SubjectRemindersSet),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.SetReminderRequest",
+			"response": "lcars.v1.ListRemindersResponse",
+		})); err != nil {
+		return err
+	}
+	if err := svc.AddEndpoint("training_put", handle(logger, trainingPut(deps.Training, logger)),
 		micro.WithEndpointSubject(SubjectTrainingPut),
 		micro.WithEndpointMetadata(map[string]string{
 			"request":  "lcars.v1.PutTrainingAudioRequest",
 			"response": "lcars.v1.PutTrainingAudioResponse",
+		})); err != nil {
+		return err
+	}
+	return svc.AddEndpoint("weather_get", handle(logger, weatherGet(ctx, logger, deps.Weather)),
+		micro.WithEndpointSubject(SubjectWeatherGet),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.GetWeatherRequest",
+			"response": "lcars.v1.GetWeatherResponse",
 		}))
 }
 

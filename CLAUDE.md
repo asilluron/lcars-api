@@ -68,18 +68,22 @@ user rather than trying to fix history yourself.
 
 Authentication is optional (off without Supabase), so:
 
-- Device endpoints and NATS subjects are read-only, except `lcars.training.put`
-  and the lock subjects (`lcars.locks.lock`, `lcars.locks.unlock`). Training
-  appends PCM to hourly WAV files inside the directory set by `training.dir`,
-  under a file name the server chooses. Lock subjects call Seam; they do not
-  write files on the host. Don't add any other HTTP endpoint or NATS handler
+- Device endpoints and NATS subjects are read-only, except marking a
+  reminder done or open (`lcars.reminders.set` and `POST /reminders/{id}`),
+  which only changes that flag on an existing reminder in Supabase (the id
+  is a lookup key); the lock subjects (`lcars.locks.lock`, `lcars.locks.unlock`),
+  which call Seam and do not write files on the host; and `lcars.training.put`,
+  which appends PCM to hourly WAV files inside the directory set by
+  `training.dir`, under a file name the server chooses. Don't add any other
+  HTTP endpoint or NATS handler
   that writes files, runs commands, or changes the host.
 - The admin API (`/admin/api/...`) is the only place that changes anything
-  else, and it only manages device tokens in Supabase. Every admin operation
-  except sign-in must go through `requireAdmin`; every device endpoint through
-  `requireDevice` (HTTP) or the broker's authenticator (NATS). New NATS
-  subjects must be in `natsapi.Requests` or `natsapi.Events`, which define
-  what devices may publish and subscribe to.
+  else, and it only manages device tokens, calendar labels, and reminders in
+  Supabase. Every admin operation except sign-in must go through
+  `requireAdmin`; every device endpoint through `requireDevice` (HTTP) or
+  the broker's authenticator (NATS). New NATS subjects must be in
+  `natsapi.Requests` or `natsapi.Events`, which define what devices may
+  publish and subscribe to.
 - Device token secrets are shown once and never stored or logged: only
   their SHA-256 is kept. Never log the Supabase secret key, access tokens or
   admin emails (log the admin's user ID instead).

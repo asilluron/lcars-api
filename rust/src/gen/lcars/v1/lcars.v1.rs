@@ -241,6 +241,73 @@ pub struct UnlockDoorResponse {
     #[prost(bool, tag="2")]
     pub locked: bool,
 }
+/// ListRemindersRequest asks for every reminder. Send it as a request on the
+/// subject "lcars.reminders.list"; the reply is a ListRemindersResponse. An
+/// empty message (or an empty body) is the whole request.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid request, 503 if reminders
+/// are not configured, 500 otherwise) and "Nats-Service-Error" (a message).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListRemindersRequest {
+}
+/// ListRemindersResponse is the reminder list, oldest first. The display
+/// shows at most six.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListRemindersResponse {
+    /// When the list last changed, in seconds since the Unix epoch.
+    #[prost(int64, tag="1")]
+    pub updated_at_unix: i64,
+    /// Every reminder, in the order they were added.
+    #[prost(message, repeated, tag="2")]
+    pub reminders: ::prost::alloc::vec::Vec<Reminder>,
+}
+/// Reminder is one to-do row.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Reminder {
+    /// "rem_" and 12 lowercase letters or digits.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    /// The words shown on the row.
+    #[prost(string, tag="2")]
+    pub title: ::prost::alloc::string::String,
+    /// The smaller line under the title, such as "Due today · House". Empty
+    /// if there is none.
+    #[prost(string, tag="3")]
+    pub detail: ::prost::alloc::string::String,
+    /// One of "purple", "blue", "orange", "peach".
+    #[prost(string, tag="4")]
+    pub accent: ::prost::alloc::string::String,
+    /// True once the row has been marked done.
+    #[prost(bool, tag="5")]
+    pub done: bool,
+}
+/// SetReminderRequest marks one reminder done or open. Send it as a request
+/// on the subject "lcars.reminders.set"; the reply is a ListRemindersResponse
+/// of the list after the change.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid request, 404 if there is no
+/// reminder with that id, 503 if reminders are not configured, 500 otherwise)
+/// and "Nats-Service-Error" (a message).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetReminderRequest {
+    /// The reminder's id.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    /// The done state to store.
+    #[prost(bool, tag="2")]
+    pub done: bool,
+}
+/// RemindersUpdated is published on the subject "lcars.reminders.updated"
+/// when a reminder is added, removed, or marked done or open. Clients
+/// showing the list should request it again.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RemindersUpdated {
+    /// When the list changed, in seconds since the Unix epoch.
+    #[prost(int64, tag="1")]
+    pub updated_at_unix: i64,
+}
 /// PutTrainingAudioRequest is one chunk of microphone audio. Send it as a
 /// request on the subject "lcars.training.put"; the reply is a
 /// PutTrainingAudioResponse.
@@ -268,5 +335,42 @@ pub struct PutTrainingAudioResponse {
     /// Bytes of pcm appended to the hourly WAV file.
     #[prost(uint32, tag="1")]
     pub accepted_bytes: u32,
+}
+/// GetWeatherRequest asks for the current conditions. Send it as a request on
+/// the subject "lcars.weather.get"; the reply is a GetWeatherResponse. An
+/// empty message (or an empty body) is the whole request.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid request, 503 if weather is
+/// not configured or the forecast could not be read, 500 otherwise) and
+/// "Nats-Service-Error" (a message).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetWeatherRequest {
+}
+/// GetWeatherResponse is the current conditions at the configured point,
+/// in Fahrenheit and miles per hour, rounded to whole numbers.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetWeatherResponse {
+    /// Short condition, such as "Partly cloudy".
+    #[prost(string, tag="1")]
+    pub summary: ::prost::alloc::string::String,
+    /// Current temperature.
+    #[prost(int32, tag="2")]
+    pub temperature_f: i32,
+    /// Current apparent temperature.
+    #[prost(int32, tag="3")]
+    pub feels_like_f: i32,
+    /// Today's forecast high.
+    #[prost(int32, tag="4")]
+    pub high_f: i32,
+    /// Today's forecast low.
+    #[prost(int32, tag="5")]
+    pub low_f: i32,
+    /// Current wind speed.
+    #[prost(int32, tag="6")]
+    pub wind_mph: i32,
+    /// When this report was read, in seconds since the Unix epoch.
+    #[prost(int64, tag="7")]
+    pub observed_at_unix: i64,
 }
 // @@protoc_insertion_point(module)

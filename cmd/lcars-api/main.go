@@ -23,9 +23,11 @@ import (
 	"github.com/asilluron/lcars-api/internal/devices"
 	"github.com/asilluron/lcars-api/internal/locks"
 	"github.com/asilluron/lcars-api/internal/natsapi"
+	"github.com/asilluron/lcars-api/internal/reminders"
 	"github.com/asilluron/lcars-api/internal/server"
 	"github.com/asilluron/lcars-api/internal/supabase"
 	"github.com/asilluron/lcars-api/internal/training"
+	"github.com/asilluron/lcars-api/internal/weather"
 )
 
 func main() {
@@ -74,19 +76,23 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		logger.Info("training disabled: training.dir is not set")
 	}
 
-	// Device tokens, when Supabase is configured. bus is set below; tokens
-	// can only be removed once the servers are running.
+	// Device tokens, reminders, and calendar labels, when Supabase is
+	// configured. bus is set below; tokens can only be removed once the
+	// servers are running.
 	var (
-		bus    *broker.Broker
-		tokens *devices.Store
-		admins server.AdminAuth
-		labels server.CalendarLabelDB
-		auth   *broker.Auth
+		bus          *broker.Broker
+		tokens       *devices.Store
+		reminderList *reminders.Store
+		admins       server.AdminAuth
+		labels       server.CalendarLabelDB
+		auth         *broker.Auth
 	)
 	if cfg.Supabase.Enabled() {
 		db := supabase.New(cfg.Supabase.URL, cfg.Supabase.SecretKey)
 		admins = db
 		labels = db
+		reminderList = reminders.New(reminders.Supabase(db))
+		logger.Info("reminders enabled")
 		tokens = devices.NewStore(db, logger, func(id string) { bus.Disconnect(id) })
 		if err := tokens.Load(ctx); err != nil {
 			// Keep going: Run retries, and until then devices are refused.
@@ -104,6 +110,7 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		}
 		logger.Info("device authentication enabled", "supabase", cfg.Supabase.URL)
 	} else {
+		logger.Info("reminders disabled: supabase.url is not set")
 		logger.Warn("device authentication disabled: supabase.url is not set, so anyone on the network can use the API")
 	}
 
@@ -144,11 +151,25 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		logger.Info("locks disabled: seam.api_key is not set")
 	}
 
+	var forecast *weather.Client
+	if cfg.Weather.Enabled() {
+		forecast = weather.New(cfg.Weather.URL, *cfg.Weather.Latitude, *cfg.Weather.Longitude)
+		logger.Info("weather enabled")
+	} else {
+		logger.Info("weather disabled: weather.latitude and weather.longitude are not set")
+	}
+
+	if reminderList != nil {
+		reminderList.SetOnChange(natsapi.RemindersChanged(bus.Conn, logger))
+	}
+
 	svc, err := natsapi.Start(ctx, bus.Conn, logger, server.Version(), natsapi.Deps{
-		Calendar: cal,
-		Cameras:  cams,
-		Locks:    doorLocks,
-		Training: audio,
+		Calendar:  cal,
+		Cameras:   cams,
+		Locks:     doorLocks,
+		Reminders: reminderList,
+		Training:  audio,
+		Weather:   forecast,
 	})
 	if err != nil {
 		return err
@@ -171,6 +192,8 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 			Calendar:        cal,
 			Cameras:         cams,
 			Locks:           doorLocks,
+			Reminders:       reminderList,
+			Weather:         forecast,
 			NATS:            bus.Conn,
 			Devices:         tokens,
 			Admins:          admins,

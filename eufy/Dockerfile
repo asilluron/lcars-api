@@ -4,6 +4,10 @@
 # @mega-yfue/eufy-sdk requires Node >= 24.5.
 FROM node:24.22.1-slim
 
+# ffmpeg decodes a short live burst when Eufy has no retained push thumbnail.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --no-audit --no-fund

@@ -154,12 +154,20 @@ func TestAPIDocs(t *testing.T) {
 		case "/snapshot/CAM1":
 			w.Header().Set("Content-Type", "image/jpeg")
 			_, _ = w.Write([]byte{0xff, 0xd8, 0xff, 0xd9})
+		case "/v1/forecast":
+			_, _ = io.WriteString(w, `{"current":{"temperature_2m":72.2,"apparent_temperature":70.1,"weather_code":0,"wind_speed_10m":4.2},"daily":{"temperature_2m_max":[78.4],"temperature_2m_min":[55.2]}}`)
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	t.Cleanup(upstream.Close)
-	p := startServer(t, "LCARS_CALENDAR_DIR="+fixturesDir(t), "LCARS_EUFY_URL="+upstream.URL)
+	p := startServer(t,
+		"LCARS_CALENDAR_DIR="+fixturesDir(t),
+		"LCARS_EUFY_URL="+upstream.URL,
+		"LCARS_WEATHER_LATITUDE=0",
+		"LCARS_WEATHER_LONGITUDE=0",
+		"LCARS_WEATHER_URL="+upstream.URL,
+	)
 
 	resp := mustDo(t, http.MethodGet, p.url("/openapi.json"))
 	if resp.StatusCode != http.StatusOK {
@@ -193,7 +201,16 @@ func TestAPIDocs(t *testing.T) {
 		// Path templates are requested with a stand-in serial. The OpenAPI
 		// path itself is not a serial the proxy would accept.
 		reqPath := strings.ReplaceAll(path, "{sn}", "CAM1")
-		if r := mustDo(t, http.MethodGet, p.url(reqPath)); r.StatusCode != http.StatusOK {
+		r := mustDo(t, http.MethodGet, p.url(reqPath))
+		// Reminders are stored in Supabase. Turning that on also requires
+		// device authentication, so this server (auth off) answers 503.
+		if path == "/reminders" {
+			if r.StatusCode != http.StatusServiceUnavailable {
+				t.Errorf("GET /reminders status = %d, want 503 without Supabase", r.StatusCode)
+			}
+			continue
+		}
+		if r.StatusCode != http.StatusOK {
 			t.Errorf("GET %s (documented) status = %d, want 200", path, r.StatusCode)
 		}
 	}

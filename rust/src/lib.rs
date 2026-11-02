@@ -11,7 +11,11 @@
 //! | [`subjects::LOCKS_LIST`]               | request/reply | [`v1::ListLocksRequest`] → [`v1::ListLocksResponse`] |
 //! | [`subjects::LOCKS_LOCK`]               | request/reply | [`v1::LockDoorRequest`] → [`v1::LockDoorResponse`] |
 //! | [`subjects::LOCKS_UNLOCK`]             | request/reply | [`v1::UnlockDoorRequest`] → [`v1::UnlockDoorResponse`] |
+//! | [`subjects::REMINDERS_LIST`]           | request/reply | [`v1::ListRemindersRequest`] → [`v1::ListRemindersResponse`] |
+//! | [`subjects::REMINDERS_SET`]            | request/reply | [`v1::SetReminderRequest`] → [`v1::ListRemindersResponse`] |
+//! | [`subjects::REMINDERS_UPDATED`]        | event         | [`v1::RemindersUpdated`]                             |
 //! | [`subjects::TRAINING_PUT`]             | request/reply | [`v1::PutTrainingAudioRequest`] → [`v1::PutTrainingAudioResponse`] |
+//! | [`subjects::WEATHER_GET`]              | request/reply | [`v1::GetWeatherRequest`] → [`v1::GetWeatherResponse`] |
 //!
 //! A failed request gets a reply with an empty body and two headers:
 //! [`headers::ERROR_CODE`] (an HTTP-style status such as `"400"`) and
@@ -76,16 +80,32 @@ pub mod subjects {
     /// reply is an [`UnlockDoorResponse`](crate::v1::UnlockDoorResponse).
     /// The server waits for Seam to confirm the action.
     pub const LOCKS_UNLOCK: &str = "lcars.locks.unlock";
+    /// Request a [`ListRemindersRequest`](crate::v1::ListRemindersRequest);
+    /// the reply is a [`ListRemindersResponse`](crate::v1::ListRemindersResponse).
+    pub const REMINDERS_LIST: &str = "lcars.reminders.list";
+    /// Request a [`SetReminderRequest`](crate::v1::SetReminderRequest) to
+    /// mark one reminder done or open. The reply is the list afterwards,
+    /// a [`ListRemindersResponse`](crate::v1::ListRemindersResponse).
+    pub const REMINDERS_SET: &str = "lcars.reminders.set";
+    /// A [`RemindersUpdated`](crate::v1::RemindersUpdated) is published here
+    /// when a reminder is added, removed, or marked done or open. Request
+    /// the list again on receipt.
+    pub const REMINDERS_UPDATED: &str = "lcars.reminders.updated";
     /// Send a [`PutTrainingAudioRequest`](crate::v1::PutTrainingAudioRequest);
     /// the reply is a [`PutTrainingAudioResponse`](crate::v1::PutTrainingAudioResponse).
     /// The server stores the PCM under a name it chooses.
     pub const TRAINING_PUT: &str = "lcars.training.put";
+    /// Request a [`GetWeatherRequest`](crate::v1::GetWeatherRequest); the
+    /// reply is a [`GetWeatherResponse`](crate::v1::GetWeatherResponse).
+    /// Temperatures are Fahrenheit and the wind speed is miles per hour.
+    pub const WEATHER_GET: &str = "lcars.weather.get";
 }
 
 /// Headers on error replies (the NATS service API convention).
 pub mod headers {
-    /// HTTP-style status code: `"400"` for an invalid request, `"503"` if
-    /// the data source isn't configured on the server, `"500"` otherwise.
+    /// HTTP-style status code: `"400"` for an invalid request, `"404"` if a
+    /// reminder id is not in the list, `"503"` if the data source isn't
+    /// configured on the server, `"500"` otherwise.
     pub const ERROR_CODE: &str = "Nats-Service-Error-Code";
     /// Human-readable error message.
     pub const ERROR: &str = "Nats-Service-Error";

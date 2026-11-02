@@ -197,6 +197,20 @@ tls_dir = "nats-tls"
 	}
 }
 
+func TestWeatherConfig(t *testing.T) {
+	cfg, err := Load(env(map[string]string{
+		"LCARS_WEATHER_LATITUDE":  "0",
+		"LCARS_WEATHER_LONGITUDE": "0",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Weather.Enabled() || cfg.Weather.URL != "https://api.open-meteo.com" ||
+		*cfg.Weather.Latitude != 0 || *cfg.Weather.Longitude != 0 {
+		t.Fatalf("weather = %+v", cfg.Weather)
+	}
+}
+
 func TestLoadInvalid(t *testing.T) {
 	tests := map[string]struct {
 		file    string // config file content; "" means no file
@@ -237,6 +251,22 @@ func TestLoadInvalid(t *testing.T) {
 		"supabase refresh too fast": {
 			env:     map[string]string{"LCARS_SUPABASE_REFRESH_INTERVAL": "100ms"},
 			wantErr: "LCARS_SUPABASE_REFRESH_INTERVAL",
+		},
+		"weather latitude": {
+			env:     map[string]string{"LCARS_WEATHER_LATITUDE": "south"},
+			wantErr: "LCARS_WEATHER_LATITUDE",
+		},
+		"weather latitude only": {
+			env:     map[string]string{"LCARS_WEATHER_LATITUDE": "0"},
+			wantErr: "must be set together",
+		},
+		"weather longitude only": {
+			env:     map[string]string{"LCARS_WEATHER_LONGITUDE": "0"},
+			wantErr: "must be set together",
+		},
+		"weather url": {
+			env:     map[string]string{"LCARS_WEATHER_URL": "ftp://example.com"},
+			wantErr: "LCARS_WEATHER_URL",
 		},
 	}
 	for name, tt := range tests {

@@ -76,6 +76,52 @@ func TestCamerasProxy(t *testing.T) {
 	}
 }
 
+// TestCameraSnapshotOutlivesWriteTimeout is the reason the snapshot handler
+// clears the server's deadlines: the proxy may take a live still that needs
+// longer than the 15s write timeout.
+func TestCameraSnapshotOutlivesWriteTimeout(t *testing.T) {
+	const jpeg = "\xff\xd8\xff\xd9"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/snapshot/CAM1" {
+			http.NotFound(w, r)
+			return
+		}
+		time.Sleep(400 * time.Millisecond)
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = io.WriteString(w, jpeg)
+	}))
+	defer upstream.Close()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{
+		Handler:           New(slog.New(slog.DiscardHandler), Deps{Cameras: cameras.New(upstream.URL)}),
+		ReadHeaderTimeout: 200 * time.Millisecond,
+		ReadTimeout:       200 * time.Millisecond,
+		WriteTimeout:      200 * time.Millisecond,
+	}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+
+	resp, err := http.Get("http://" + ln.Addr().String() + "/cameras/CAM1/snapshot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != jpeg {
+		t.Fatalf("snapshot = %q, want jpeg", got)
+	}
+}
+
 // TestCameraStreamOutlivesWriteTimeout is the reason the stream handler
 // clears the server's read and write deadlines: a live view is longer than
 // the 15s timeout on the real server.
