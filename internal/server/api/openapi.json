@@ -2235,6 +2235,40 @@
             "description": "Lane set on the admin page. Empty when none is set."
           }
         }
+      },
+      "SaveCalendarRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable calendar id from the list (`mail:\u2026` or `file:\u2026`).",
+            "example": "mail:ada@example.com",
+            "maxLength": 200
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name. Empty keeps the source name. Empty name and category together clear the saved label.",
+            "example": "Family",
+            "maxLength": 40
+          },
+          "category": {
+            "type": "string",
+            "description": "Panel lane. Empty clears the lane. Allowed values: work, band, personal, house.",
+            "example": "personal",
+            "enum": [
+              "",
+              "work",
+              "band",
+              "personal",
+              "house"
+            ]
+          }
+        }
       }
     },
     "responses": {
