@@ -40,8 +40,6 @@ type Event struct {
 	End   time.Time
 }
 
-// Store holds the events parsed from a directory of .ics files. It is safe for
-// concurrent use.
 // Label is a display name and lane chosen for one calendar on the admin page.
 // An empty Name keeps the name derived from the file.
 type Label struct {
@@ -63,6 +61,8 @@ type CatalogEntry struct {
 	Path string
 }
 
+// Store holds the events parsed from a directory of .ics files. It is safe for
+// concurrent use.
 type Store struct {
 	dir    string
 	loc    *time.Location

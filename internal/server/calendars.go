@@ -47,7 +47,7 @@ type calendarSource struct {
 }
 
 func listCalendars(_ *slog.Logger, deps Deps) adminHandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request, _ supabase.User) error {
+	return func(w http.ResponseWriter, _ *http.Request, _ supabase.User) error {
 		if err := calendarsReady(deps); err != nil {
 			return err
 		}

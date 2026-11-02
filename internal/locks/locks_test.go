@@ -2,6 +2,7 @@ package locks
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -125,7 +126,7 @@ func TestUnlockDoorError(t *testing.T) {
 
 	c := New(srv.URL, "key")
 	err := c.UnlockDoor(context.Background(), testID)
-	se, ok := err.(*StatusError)
+	se, ok := errors.AsType[*StatusError](err)
 	if !ok || se.Code != http.StatusBadGateway || se.Msg != "lock action failed" {
 		t.Fatalf("err = %v", err)
 	}
@@ -137,7 +138,7 @@ func TestUnlockDoorError(t *testing.T) {
 func TestInvalidID(t *testing.T) {
 	c := New("http://127.0.0.1:9", "key")
 	err := c.LockDoor(context.Background(), "not-a-uuid")
-	se, ok := err.(*StatusError)
+	se, ok := errors.AsType[*StatusError](err)
 	if !ok || se.Code != http.StatusBadRequest {
 		t.Fatalf("err = %v", err)
 	}
@@ -152,7 +153,7 @@ func TestSeamNotFound(t *testing.T) {
 
 	c := New(srv.URL, "key")
 	err := c.UnlockDoor(context.Background(), testID)
-	se, ok := err.(*StatusError)
+	se, ok := errors.AsType[*StatusError](err)
 	if !ok || se.Code != http.StatusNotFound {
 		t.Fatalf("err = %v", err)
 	}

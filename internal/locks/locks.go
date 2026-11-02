@@ -62,7 +62,7 @@ type Lock struct {
 type Client struct {
 	base   string
 	apiKey string
-	http *http.Client
+	http   *http.Client
 }
 
 // New returns a client for the Seam API at base (such as DefaultURL) using
