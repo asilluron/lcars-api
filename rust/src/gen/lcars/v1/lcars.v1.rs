@@ -195,49 +195,50 @@ pub struct Lock {
 }
 /// LockDoorRequest asks the server to lock a door. Send it as a request on
 /// the subject "lcars.locks.lock"; the reply is a LockDoorResponse. The
-/// server waits for Seam to confirm the action (or fail) before replying.
+/// server asks Seam once and replies when that command is accepted (or
+/// rejected immediately). It does not poll or retry a jammed bolt.
 ///
 /// On failure the reply has an empty body and the headers
 /// "Nats-Service-Error-Code" (400 for an invalid id, 404 if Seam has no such
-/// lock, 503 if locks are not configured or Seam is unreachable, 504 if
-/// Seam did not finish in time, 500 otherwise) and "Nats-Service-Error".
+/// lock, 503 if locks are not configured or Seam is unreachable, 500
+/// otherwise) and "Nats-Service-Error".
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LockDoorRequest {
     /// Seam device id from ListLocksResponse.
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
 }
-/// LockDoorResponse confirms the lock command finished.
+/// LockDoorResponse confirms the lock command was accepted.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct LockDoorResponse {
     /// Seam device id that was locked.
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// Always true after a successful lock.
+    /// Always true after the lock command is accepted.
     #[prost(bool, tag="2")]
     pub locked: bool,
 }
 /// UnlockDoorRequest asks the server to unlock a door. Send it as a request
 /// on the subject "lcars.locks.unlock"; the reply is an UnlockDoorResponse.
-/// The server waits for Seam to confirm the action (or fail) before replying.
+/// Same one-shot rule as LockDoorRequest.
 ///
 /// On failure the reply has an empty body and the headers
 /// "Nats-Service-Error-Code" (400 for an invalid id, 404 if Seam has no such
-/// lock, 503 if locks are not configured or Seam is unreachable, 504 if
-/// Seam did not finish in time, 500 otherwise) and "Nats-Service-Error".
+/// lock, 503 if locks are not configured or Seam is unreachable, 500
+/// otherwise) and "Nats-Service-Error".
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UnlockDoorRequest {
     /// Seam device id from ListLocksResponse.
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
 }
-/// UnlockDoorResponse confirms the unlock command finished.
+/// UnlockDoorResponse confirms the unlock command was accepted.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UnlockDoorResponse {
     /// Seam device id that was unlocked.
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// Always false after a successful unlock.
+    /// Always false after the unlock command is accepted.
     #[prost(bool, tag="2")]
     pub locked: bool,
 }

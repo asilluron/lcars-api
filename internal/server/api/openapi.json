@@ -44,7 +44,7 @@
     },
     {
       "name": "Locks",
-      "description": "Smart locks through [Seam](https://www.seam.co), configured with `seam.api_key` (`LCARS_SEAM_API_KEY`). When that is unset, every lock operation answers `503`.\n\n`GET /locks` is the same catalog as `lcars.locks.list`. Lock and unlock wait for Seam to confirm the action (or fail) before answering. The Seam API key stays on this server; devices talk only to lcars-api."
+      "description": "Smart locks through [Seam](https://www.seam.co), configured with `seam.api_key` (`LCARS_SEAM_API_KEY`). When that is unset, every lock operation answers `503`.\n\n`GET /locks` is the same catalog as `lcars.locks.list`. Lock and unlock ask Seam once and return when the command is accepted (or rejected immediately); they do not poll or retry a jammed bolt. The Seam API key stays on this server; devices talk only to lcars-api."
     },
     {
       "name": "Documentation",
@@ -1258,7 +1258,7 @@
           "Locks"
         ],
         "summary": "Lock a door",
-        "description": "Asks Seam to lock the door and waits until the action succeeds or fails (up to about 25 seconds). The response is not limited by the 15 second write timeout.",
+        "description": "Asks Seam to lock the door once and returns when Seam accepts the command (or rejects it immediately). Does not poll or re-issue while a bolt is jammed.",
         "parameters": [
           {
             "name": "id",
@@ -1371,7 +1371,7 @@
           "Locks"
         ],
         "summary": "Unlock a door",
-        "description": "Asks Seam to unlock the door and waits until the action succeeds or fails (up to about 25 seconds). The response is not limited by the 15 second write timeout.",
+        "description": "Asks Seam to unlock the door once and returns when Seam accepts the command (or rejects it immediately). Does not poll or re-issue while a bolt is jammed.",
         "parameters": [
           {
             "name": "id",
@@ -2233,6 +2233,40 @@
               "house"
             ],
             "description": "Lane set on the admin page. Empty when none is set."
+          }
+        }
+      },
+      "SaveCalendarRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable calendar id from the list (`mail:\u2026` or `file:\u2026`).",
+            "example": "mail:ada@example.com",
+            "maxLength": 200
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name. Empty keeps the source name. Empty name and category together clear the saved label.",
+            "example": "Family",
+            "maxLength": 40
+          },
+          "category": {
+            "type": "string",
+            "description": "Panel lane. Empty clears the lane. Allowed values: work, band, personal, house.",
+            "example": "personal",
+            "enum": [
+              "",
+              "work",
+              "band",
+              "personal",
+              "house"
+            ]
           }
         }
       }
