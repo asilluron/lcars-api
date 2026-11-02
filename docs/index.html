@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="LCARS for home: a wall-screen home assistant. lcars-api serves your house over NATS; lcars-iot draws the panel on a Raspberry Pi."
+    />
+    <meta name="theme-color" content="#000000" />
+    <title>LCARS · Home control for a wall screen</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="hero" aria-label="Introduction">
+      <div class="hero-rail" aria-hidden="true">
+        <span class="rail-cap peach"></span>
+        <span class="rail-bar orange"></span>
+        <span class="rail-bar lilac"></span>
+        <span class="rail-bar blue"></span>
+        <span class="rail-elbow"></span>
+      </div>
+
+      <div class="hero-copy">
+        <p class="brand">LCARS</p>
+        <h1>Home control for a wall screen</h1>
+        <p class="lede">
+          An open-source home assistant styled after Star Trek’s LCARS. The
+          panel runs on a Raspberry Pi; the API runs on your LAN and feeds it
+          calendars, reminders, cameras, locks, and weather.
+        </p>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/asilluron/lcars-iot"
+            >Panel · lcars-iot</a
+          >
+          <a class="btn" href="https://github.com/asilluron/lcars-api"
+            >API · lcars-api</a
+          >
+          <a class="btn ghost" href="#start">How to run</a>
+        </div>
+      </div>
+
+      <div class="hero-visual" aria-hidden="true">
+        <svg
+          class="panel-art"
+          viewBox="0 0 640 400"
+          xmlns="http://www.w3.org/2000/svg"
+          role="img"
+        >
+          <title>Stylized LCARS home panel</title>
+          <rect width="640" height="400" fill="#000" />
+          <path
+            d="M0 36h420a28 28 0 0 1 28 28v12H56a28 28 0 0 0-28 28v48H0V36z"
+            fill="#ff9c00"
+          />
+          <rect x="460" y="36" width="72" height="40" rx="12" fill="#ffcc99" />
+          <rect x="544" y="36" width="96" height="40" rx="12" fill="#cc99cc" />
+          <text
+            x="24"
+            y="62"
+            fill="#000"
+            font-family="Antonio, sans-serif"
+            font-size="22"
+            font-weight="700"
+            letter-spacing="0.12em"
+          >
+            LCARS · HOME
+          </text>
+          <text
+            x="476"
+            y="62"
+            fill="#000"
+            font-family="Antonio, sans-serif"
+            font-size="14"
+            font-weight="600"
+          >
+            SYNCED
+          </text>
+          <text
+            x="560"
+            y="62"
+            fill="#000"
+            font-family="Antonio, sans-serif"
+            font-size="14"
+            font-weight="600"
+          >
+            14:22
+          </text>
+
+          <rect x="0" y="152" width="28" height="220" fill="#99ccff" />
+          <rect x="40" y="152" width="180" height="28" rx="8" fill="#ffcc99" />
+          <text
+            x="52"
+            y="171"
+            fill="#000"
+            font-family="Antonio, sans-serif"
+            font-size="14"
+            font-weight="600"
+          >
+            TODAY · HOUSE
+          </text>
+          <rect x="40" y="192" width="180" height="52" rx="6" fill="#1a1714" stroke="#3a332c" />
+          <text x="52" y="214" fill="#f4e9dc" font-family="Antonio, sans-serif" font-size="16">
+            Soccer practice
+          </text>
+          <text x="52" y="232" fill="#b8a99a" font-family="IBM Plex Mono, monospace" font-size="11">
+            16:00 · Community park
+          </text>
+          <rect x="40" y="254" width="180" height="52" rx="6" fill="#1a1714" stroke="#3a332c" />
+          <text x="52" y="276" fill="#f4e9dc" font-family="Antonio, sans-serif" font-size="16">
+            Team standup
+          </text>
+          <text x="52" y="294" fill="#b8a99a" font-family="IBM Plex Mono, monospace" font-size="11">
+            09:00 · Video call
+          </text>
+
+          <rect x="240" y="152" width="180" height="28" rx="8" fill="#cc99cc" />
+          <text
+            x="252"
+            y="171"
+            fill="#000"
+            font-family="Antonio, sans-serif"
+            font-size="14"
+            font-weight="600"
+          >
+            REMINDERS
+          </text>
+          <rect x="240" y="192" width="22" height="22" rx="4" fill="#9a8fe0" />
+          <text x="274" y="208" fill="#f4e9dc" font-family="Antonio, sans-serif" font-size="15">
+            Bring in recycling
+          </text>
+          <rect x="240" y="228" width="22" height="22" rx="4" fill="#ff9c00" />
+          <text x="274" y="244" fill="#f4e9dc" font-family="Antonio, sans-serif" font-size="15">
+            Water plants
+          </text>
+
+          <rect x="440" y="152" width="200" height="28" rx="8" fill="#99ccff" />
+          <text
+            x="452"
+            y="171"
+            fill="#000"
+            font-family="Antonio, sans-serif"
+            font-size="14"
+            font-weight="600"
+          >
+            SECURITY
+          </text>
+          <rect x="440" y="192" width="96" height="72" rx="8" fill="#12100e" stroke="#ff9c00" stroke-width="2" />
+          <text x="456" y="224" fill="#ffcc99" font-family="Antonio, sans-serif" font-size="13">
+            FRONT
+          </text>
+          <text x="456" y="244" fill="#f4e9dc" font-family="Antonio, sans-serif" font-size="18" font-weight="700">
+            LOCKED
+          </text>
+          <rect x="544" y="192" width="96" height="72" rx="8" fill="#12100e" stroke="#3a332c" stroke-width="2" />
+          <text x="560" y="224" fill="#b8a99a" font-family="Antonio, sans-serif" font-size="13">
+            CAMERA
+          </text>
+          <text x="560" y="244" fill="#99ccff" font-family="Antonio, sans-serif" font-size="18" font-weight="700">
+            LIVE
+          </text>
+
+          <rect x="40" y="340" width="120" height="36" rx="18" fill="#ff9c00" />
+          <rect x="172" y="340" width="88" height="36" rx="18" fill="#ffcc99" />
+          <rect x="272" y="340" width="88" height="36" rx="18" fill="#cc99cc" />
+          <text
+            x="58"
+            y="363"
+            fill="#000"
+            font-family="Antonio, sans-serif"
+            font-size="14"
+            font-weight="700"
+          >
+            62°F CLEAR
+          </text>
+        </svg>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="section system" id="system" aria-labelledby="system-title">
+        <div class="section-rail" aria-hidden="true">
+          <span class="elbow orange"></span>
+          <span class="bar peach"></span>
+        </div>
+        <div class="section-body">
+          <h2 id="system-title">Two pieces, one house</h2>
+          <p>
+            The wall screen and the server are separate open-source projects.
+            They talk over your home network with NATS and protobuf—no cloud
+            account required for the core path.
+          </p>
+          <ul class="pair">
+            <li>
+              <a href="https://github.com/asilluron/lcars-iot">
+                <span class="pair-label">lcars-iot</span>
+                <span class="pair-desc"
+                  >Native Rust panel (Slint). Renders on a Pi 5 with
+                  LinuxKMS, or on a laptop for development. This is the UI on
+                  the wall.</span
+                >
+              </a>
+            </li>
+            <li>
+              <a href="https://github.com/asilluron/lcars-api">
+                <span class="pair-label">lcars-api</span>
+                <span class="pair-desc"
+                  >Go server on a Mac mini, NAS, or Pi. Reads local calendar
+                  files, embeds NATS, proxies cameras and locks, and hosts the
+                  admin page.</span
+                >
+              </a>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section features" id="features" aria-labelledby="features-title">
+        <div class="section-rail" aria-hidden="true">
+          <span class="elbow lilac"></span>
+          <span class="bar blue"></span>
+        </div>
+        <div class="section-body">
+          <h2 id="features-title">What the panel can show</h2>
+          <p>
+            Each capability turns on when you point the API at a local source.
+            Leave a setting unset and that endpoint stays off.
+          </p>
+          <dl class="feature-list">
+            <div>
+              <dt>Calendar</dt>
+              <dd>
+                Serves a directory of <code>.ics</code> exports, expands
+                recurrence, and pushes <code>lcars.calendar.updated</code> when
+                files change.
+              </dd>
+            </div>
+            <div>
+              <dt>Reminders</dt>
+              <dd>
+                A short to-do list in local Supabase. Admins add items; the
+                panel marks them done.
+              </dd>
+            </div>
+            <div>
+              <dt>Cameras</dt>
+              <dd>
+                Catalog, snapshots, and live Annex-B streams via an optional
+                Eufy proxy on the same machine.
+              </dd>
+            </div>
+            <div>
+              <dt>Locks</dt>
+              <dd>
+                List, lock, and unlock through Seam. The API key stays on the
+                server; devices only talk to lcars-api.
+              </dd>
+            </div>
+            <div>
+              <dt>Weather</dt>
+              <dd>
+                Current conditions for a configured lat/long via Open-Meteo. No
+                API key required.
+              </dd>
+            </div>
+            <div>
+              <dt>Device tokens</dt>
+              <dd>
+                Optional auth with Supabase. Issue and revoke tokens on the
+                embedded admin page at <code>/admin/</code>.
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="section start" id="start" aria-labelledby="start-title">
+        <div class="section-rail" aria-hidden="true">
+          <span class="elbow peach"></span>
+          <span class="bar orange"></span>
+        </div>
+        <div class="section-body">
+          <h2 id="start-title">How to run it</h2>
+          <p>
+            Keep everything on a trusted LAN. Without Supabase, the API is
+            open to the network; with it, devices need tokens, but traffic is
+            still for the home—not the public internet.
+          </p>
+
+          <ol class="steps">
+            <li>
+              <h3>1 · Start the API</h3>
+              <p>
+                On the machine that holds your calendars (Go 1.27+):
+              </p>
+              <pre><code>git clone https://github.com/asilluron/lcars-api.git
+cd lcars-api
+cp lcars.example.toml lcars.toml   # set calendar.dir, timezone, …
+make run                           # NATS :4222, HTTP :8080
+curl localhost:8080/healthz</code></pre>
+            </li>
+            <li>
+              <h3>2 · Point the panel at it</h3>
+              <p>
+                On a laptop for a windowed preview, or on the Pi image via
+                Balena device variables:
+              </p>
+              <pre><code># from https://github.com/asilluron/lcars-iot
+export NATS_URL=nats://192.0.2.10:4222
+export LCARS_HTTP_URL=http://192.0.2.10:8080
+cargo run -p lcars-app</code></pre>
+              <p class="note">
+                With device auth on, also set
+                <code>LCARS_DEVICE_USER</code> and
+                <code>LCARS_DEVICE_SECRET</code>. For
+                <code>tls://</code> NATS, set <code>NATS_CA_B64</code> or
+                <code>NATS_CA_FILE</code>.
+              </p>
+            </li>
+            <li>
+              <h3>3 · Optional: tokens, cameras, locks</h3>
+              <p>
+                Run local Supabase for the admin page and reminders
+                (<code>supabase start</code>), set <code>eufy.url</code> for
+                cameras, and <code>seam.api_key</code> for locks. Full tables
+                live in the
+                <a href="https://github.com/asilluron/lcars-api#readme"
+                  >lcars-api README</a
+                >.
+              </p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section build" id="build" aria-labelledby="build-title">
+        <div class="section-rail" aria-hidden="true">
+          <span class="elbow blue"></span>
+          <span class="bar lilac"></span>
+        </div>
+        <div class="section-body">
+          <h2 id="build-title">Built for the LAN</h2>
+          <p>
+            NATS is the primary API; HTTP covers health, JSON mirrors, OpenAPI
+            docs, and admin. Generated Rust types ship in
+            <code>lcars-api</code> for microcontroller-friendly clients.
+          </p>
+          <ul class="links">
+            <li>
+              <a href="https://github.com/asilluron/lcars-api#nats-api"
+                >NATS subjects</a
+              >
+            </li>
+            <li>
+              <a href="https://github.com/asilluron/lcars-api#http-api"
+                >HTTP routes</a
+              >
+            </li>
+            <li>
+              <a href="https://github.com/asilluron/lcars-api/tree/main/rust"
+                >Rust client crate</a
+              >
+            </li>
+            <li>
+              <a href="https://github.com/asilluron/lcars-iot"
+                >Panel technical notes</a
+              >
+            </li>
+            <li>
+              <a href="https://github.com/asilluron/lcars-api/blob/main/LICENSE"
+                >MIT license</a
+              >
+            </li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-rail" aria-hidden="true"></div>
+      <p>
+        LCARS for home ·
+        <a href="https://github.com/asilluron/lcars-api">lcars-api</a>
+        ·
+        <a href="https://github.com/asilluron/lcars-iot">lcars-iot</a>
+        · MIT
+      </p>
+      <p class="footer-note">
+        Home network only. Not affiliated with Paramount or Star Trek.
+      </p>
+    </footer>
+  </body>
+</html>

@@ -3,6 +3,10 @@
 LCARS for home. A lightweight Go server that powers a home assistant display
 styled after the LCARS interface from Star Trek.
 
+The wall screen UI is **[lcars-iot](https://github.com/asilluron/lcars-iot)**
+(Rust / Slint on a Raspberry Pi). This repository is the LAN API it talks to.
+Project overview: <https://asilluron.github.io/lcars-api/>.
+
 The server runs on a computer on your home network (a Mac mini, a Raspberry
 Pi, a NAS), reads data from files on that machine, such as calendar exports,
 and serves it to the display over [NATS](https://nats.io) as
@@ -463,6 +467,7 @@ cmd/lcars-api/         main package: wiring, signal handling, graceful shutdown
 proto/lcars/v1/        protobuf definitions: the NATS API contract
 gen/go/lcars/v1/       generated Go types (make proto; don't edit)
 rust/                  lcars-proto crate: generated Rust types (rust/src/gen), subjects, example client
+docs/                  project site (GitHub Pages): https://asilluron.github.io/lcars-api/
 internal/broker/       embedded NATS server (and its device authentication), or connection to an external one
 internal/natsapi/      NATS service: subjects and handlers
 internal/devices/      device tokens: create, revoke, and check credentials (cached in memory)
