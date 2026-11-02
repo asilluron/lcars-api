@@ -24,6 +24,7 @@ import (
 
 	"github.com/asilluron/lcars-api/internal/calendar"
 	"github.com/asilluron/lcars-api/internal/cameras"
+	"github.com/asilluron/lcars-api/internal/locks"
 	"github.com/asilluron/lcars-api/internal/reminders"
 	"github.com/asilluron/lcars-api/internal/training"
 	"github.com/asilluron/lcars-api/internal/weather"
@@ -45,6 +46,12 @@ const (
 	// SubjectCamerasList answers a ListCamerasRequest with a
 	// ListCamerasResponse. The video itself is fetched over HTTP.
 	SubjectCamerasList = "lcars.cameras.list"
+	// SubjectLocksList answers a ListLocksRequest with a ListLocksResponse.
+	SubjectLocksList = "lcars.locks.list"
+	// SubjectLocksLock asks Seam to lock a door and waits for confirmation.
+	SubjectLocksLock = "lcars.locks.lock"
+	// SubjectLocksUnlock asks Seam to unlock a door and waits for confirmation.
+	SubjectLocksUnlock = "lcars.locks.unlock"
 	// SubjectRemindersList answers a ListRemindersRequest with a
 	// ListRemindersResponse.
 	SubjectRemindersList = "lcars.reminders.list"
@@ -55,8 +62,8 @@ const (
 	// reminder is added, removed, or marked done or open.
 	SubjectRemindersUpdated = "lcars.reminders.updated"
 	// SubjectTrainingPut appends a chunk of microphone PCM to the training
-	// directory. It is the one subject that writes files, and only inside
-	// that directory.
+	// directory. Lock subjects talk to Seam; they do not write files on the
+	// host. Reminder set only flips a flag in Supabase.
 	SubjectTrainingPut = "lcars.training.put"
 	// SubjectWeatherGet answers a GetWeatherRequest with a GetWeatherResponse.
 	SubjectWeatherGet = "lcars.weather.get"
@@ -65,7 +72,17 @@ const (
 var (
 	// Requests lists the subjects the API answers requests on. Devices may
 	// publish to them.
-	Requests = []string{SubjectCalendarGet, SubjectCamerasList, SubjectRemindersList, SubjectRemindersSet, SubjectTrainingPut, SubjectWeatherGet}
+	Requests = []string{
+		SubjectCalendarGet,
+		SubjectCamerasList,
+		SubjectLocksList,
+		SubjectLocksLock,
+		SubjectLocksUnlock,
+		SubjectRemindersList,
+		SubjectRemindersSet,
+		SubjectTrainingPut,
+		SubjectWeatherGet,
+	}
 	// Events lists the subjects the API publishes events to. Devices may
 	// subscribe to them.
 	Events = []string{SubjectCalendarUpdated, SubjectRemindersUpdated}
@@ -79,6 +96,7 @@ var (
 type Deps struct {
 	Calendar  *calendar.Store
 	Cameras   *cameras.Client
+	Locks     *locks.Client
 	Reminders *reminders.Store
 	Training  *training.Writer
 	Weather   *weather.Client
@@ -119,6 +137,30 @@ func addEndpoints(ctx context.Context, svc micro.Service, logger *slog.Logger, d
 		micro.WithEndpointMetadata(map[string]string{
 			"request":  "lcars.v1.ListCamerasRequest",
 			"response": "lcars.v1.ListCamerasResponse",
+		})); err != nil {
+		return err
+	}
+	if err := svc.AddEndpoint("locks_list", handle(logger, locksList(ctx, logger, deps.Locks)),
+		micro.WithEndpointSubject(SubjectLocksList),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.ListLocksRequest",
+			"response": "lcars.v1.ListLocksResponse",
+		})); err != nil {
+		return err
+	}
+	if err := svc.AddEndpoint("locks_lock", handle(logger, locksLock(ctx, logger, deps.Locks)),
+		micro.WithEndpointSubject(SubjectLocksLock),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.LockDoorRequest",
+			"response": "lcars.v1.LockDoorResponse",
+		})); err != nil {
+		return err
+	}
+	if err := svc.AddEndpoint("locks_unlock", handle(logger, locksUnlock(ctx, logger, deps.Locks)),
+		micro.WithEndpointSubject(SubjectLocksUnlock),
+		micro.WithEndpointMetadata(map[string]string{
+			"request":  "lcars.v1.UnlockDoorRequest",
+			"response": "lcars.v1.UnlockDoorResponse",
 		})); err != nil {
 		return err
 	}

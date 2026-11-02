@@ -28,6 +28,7 @@ type calendarEvent struct {
 	ID       string    `json:"id"`
 	Title    string    `json:"title"`
 	Calendar string    `json:"calendar"`
+	Category string    `json:"category"`
 	Location string    `json:"location"`
 	AllDay   bool      `json:"all_day"`
 	Start    time.Time `json:"start"`
@@ -89,6 +90,7 @@ func newCalendarResponse(a calendar.Agenda) calendarResponse {
 				ID:        ev.ID,
 				Title:     ev.Title,
 				Calendar:  ev.Calendar,
+				Category:  ev.Category,
 				Location:  ev.Location,
 				AllDay:    ev.AllDay,
 				Start:     ev.Start,

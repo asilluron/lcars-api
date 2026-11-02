@@ -81,6 +81,33 @@ export function revokeToken(token: string, id: string): Promise<void> {
   return request("DELETE", `api/tokens/${encodeURIComponent(id)}`, { token });
 }
 
+export interface CalendarSource {
+  /** Stable key: "mail:ada@example.com" or "file:family.ics". */
+  id: string;
+  /** Name used when `name` is empty, such as "ada" or "Gmail". */
+  source: string;
+  /** The file's calendar title, so the row can be recognized. */
+  title: string;
+  /** Path under the calendar directory. */
+  path: string;
+  /** Display name set here. Empty means show `source`. */
+  name: string;
+  /** "work", "band", "personal", "house", or "". */
+  category: string;
+}
+
+export async function listCalendars(token: string): Promise<CalendarSource[]> {
+  const { calendars } = await request<{ calendars: CalendarSource[] }>("GET", "api/calendars", { token });
+  return calendars;
+}
+
+export function saveCalendar(
+  token: string,
+  calendar: { id: string; name: string; category: string },
+): Promise<CalendarSource> {
+  return request("PUT", "api/calendars", { token, body: calendar });
+}
+
 export type Accent = "purple" | "blue" | "orange" | "peach";
 
 export interface Reminder {

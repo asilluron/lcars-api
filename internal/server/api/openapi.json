@@ -4,7 +4,7 @@
     "title": "LCARS API",
     "version": "{{VERSION}}",
     "summary": "LCARS for home: the HTTP side of the LCARS home display API.",
-    "description": "The LCARS home display API is served primarily over **NATS**, with protobuf message bodies. This reference covers the HTTP server that runs alongside it: a health check, these docs, and JSON versions of the NATS endpoints for debugging and simple clients.\n\n## NATS API\n\nDevices connect to the NATS server lcars-api runs (port `4222` by default) or to the one it is configured to use. Message bodies are protobuf messages defined in [`proto/lcars/v1`](https://github.com/asilluron/lcars-api/tree/main/proto/lcars/v1); generated Rust (prost) types are in the `lcars-proto` crate in [`rust/`](https://github.com/asilluron/lcars-api/tree/main/rust).\n\n| Subject | Kind | Messages | HTTP equivalent |\n|---------|------|----------|-----------------|\n| `lcars.calendar.get` | request/reply | `GetCalendarRequest` → `GetCalendarResponse` | [`GET /calendar`](#operation/getCalendar) |\n| `lcars.calendar.updated` | event | `CalendarUpdated`, published when the `.ics` files change | none |\n| `lcars.cameras.list` | request/reply | `ListCamerasRequest` → `ListCamerasResponse` | [`GET /cameras`](#operation/listCameras) |\n| `lcars.weather.get` | request/reply | `GetWeatherRequest` → `GetWeatherResponse` | [`GET /weather`](#operation/getWeather) |\n| `lcars.training.put` | request/reply | `PutTrainingAudioRequest` → `PutTrainingAudioResponse`. Appends 16 kHz mono PCM to an hourly WAV file in `training.dir`. No HTTP equivalent | none |\n| `lcars.reminders.list` | request/reply | `ListRemindersRequest` → `ListRemindersResponse` | [`GET /reminders`](#operation/listReminders) |\n| `lcars.reminders.set` | request/reply | `SetReminderRequest` → `ListRemindersResponse` | [`POST /reminders/{id}`](#operation/setReminder) |\n| `lcars.reminders.updated` | event | `RemindersUpdated`, published when a reminder is added, removed, or marked done or open | none |\n\nNATS error replies have an empty body and the headers `Nats-Service-Error-Code` (the same status code the HTTP endpoint would return) and `Nats-Service-Error` (the message). The service is named `lcars`, so it also answers `$SRV.PING.lcars`, `$SRV.INFO.lcars` and `$SRV.STATS.lcars`.\n\nThis reference is generated from the OpenAPI document the server itself serves at [`/openapi.json`](/openapi.json), and the version shown above is the version of the running build.\n\n## Conventions\n\n- **Encoding.** Request and response bodies are JSON (`Content-Type: application/json`) unless an operation says otherwise.\n- **`HEAD`.** Every `GET` operation also answers `HEAD`, with the same status and headers and no body.\n- **Authentication.** See [Authentication](#section/Authentication) below.\n- **Dates and times.** Dates are `YYYY-MM-DD`. Timestamps are [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) with the UTC offset of the server's timezone, e.g. `2026-10-20T09:00:00-04:00`.\n- **Versioning.** Paths are not versioned yet. The build version is reported by [`GET /healthz`](#operation/getHealth).\n\n## Authentication\n\nAuthentication is on when the server is configured with a Supabase project (`supabase.url` and `supabase.secret_key`), and off otherwise, in which case anyone who can reach the server can use the API.\n\nWhen it is on:\n\n- **Devices** use a *device token*, made on the [admin page](/admin/): a username such as `dev_7f3k2m9q4x8w` and a secret password. Over HTTP, send them as [Basic auth](https://www.rfc-editor.org/rfc/rfc7617) on the device endpoints (marked *deviceToken* below). Over NATS, connect to the embedded server with them as the user and password, e.g. `nats://dev_7f3k2m9q4x8w:<secret>@<host>:4222`; devices may then only send requests to the API's request subjects and subscribe to its event subjects. Revoking a token takes effect immediately and closes the NATS connections using it. (Tokens are not checked when lcars-api connects to an external NATS server with `nats.url`; secure that server separately.)\n- **Admins** sign in on the admin page with an email and password. Admin accounts are Supabase Auth users, created by the operator (sign-ups are disabled). The admin API takes the access token from [`POST /admin/api/session`](#operation/createAdminSession) as a Bearer token.\n- `/healthz`, `/openapi.json`, `/docs` and the admin page itself are always open.\n\nThere is no TLS: use the API only on a trusted network, or put it behind a reverse proxy that adds TLS.\n\n## Errors\n\nErrors raised by an operation have a JSON body with a single `error` field:\n\n```json\n{\"error\": \"Internal Server Error\"}\n```\n\nUnexpected failures, including panics, are logged on the server and returned as a `500` with a generic message, so internal details never reach the client.\n\nRouting errors come from the router before any operation runs, and have a **plain-text** body:\n\n| Status | When | Body |\n|--------|------|------|\n| `404` | No route matches the path. | `404 page not found` |\n| `405` | The path exists, but not for this method. The `Allow` header lists the methods that are, e.g. `Allow: GET, HEAD`. | `Method Not Allowed` |\n\n## Timeouts\n\nThe server closes connections that are slow to send headers (5 s) or a request (15 s), and responses that take longer than 15 s to write. A live camera stream ([`GET /cameras/{sn}/stream`](#operation/getCameraStream)) is the exception: it stays open until the client closes it. Idle keep-alive connections are closed after 60 s. On `SIGTERM` or `SIGINT` it stops accepting new connections and waits for in-flight requests to finish before exiting.",
+    "description": "The LCARS home display API is served primarily over **NATS**, with protobuf message bodies. This reference covers the HTTP server that runs alongside it: a health check, these docs, and JSON versions of the NATS endpoints for debugging and simple clients.\n\n## NATS API\n\nDevices connect to the NATS server lcars-api runs (port `4222` by default) or to the one it is configured to use. Message bodies are protobuf messages defined in [`proto/lcars/v1`](https://github.com/asilluron/lcars-api/tree/main/proto/lcars/v1); generated Rust (prost) types are in the `lcars-proto` crate in [`rust/`](https://github.com/asilluron/lcars-api/tree/main/rust).\n\n| Subject | Kind | Messages | HTTP equivalent |\n|---------|------|----------|-----------------|\n| `lcars.calendar.get` | request/reply | `GetCalendarRequest` \u2192 `GetCalendarResponse` | [`GET /calendar`](#operation/getCalendar) |\n| `lcars.calendar.updated` | event | `CalendarUpdated`, published when the `.ics` files change | none |\n| `lcars.cameras.list` | request/reply | `ListCamerasRequest` \u2192 `ListCamerasResponse` | [`GET /cameras`](#operation/listCameras) |\n| `lcars.locks.list` | request/reply | `ListLocksRequest` \u2192 `ListLocksResponse` | [`GET /locks`](#operation/listLocks) |\n| `lcars.locks.lock` | request/reply | `LockDoorRequest` \u2192 `LockDoorResponse` | [`POST /locks/{id}/lock`](#operation/lockDoor) |\n| `lcars.locks.unlock` | request/reply | `UnlockDoorRequest` \u2192 `UnlockDoorResponse` | [`POST /locks/{id}/unlock`](#operation/unlockDoor) |\n| `lcars.weather.get` | request/reply | `GetWeatherRequest` \u2192 `GetWeatherResponse` | [`GET /weather`](#operation/getWeather) |\n| `lcars.training.put` | request/reply | `PutTrainingAudioRequest` \u2192 `PutTrainingAudioResponse`. Appends 16 kHz mono PCM to an hourly WAV file in `training.dir`. No HTTP equivalent | none |\n| `lcars.reminders.list` | request/reply | `ListRemindersRequest` \u2192 `ListRemindersResponse` | [`GET /reminders`](#operation/listReminders) |\n| `lcars.reminders.set` | request/reply | `SetReminderRequest` \u2192 `ListRemindersResponse` | [`POST /reminders/{id}`](#operation/setReminder) |\n| `lcars.reminders.updated` | event | `RemindersUpdated`, published when a reminder is added, removed, or marked done or open | none |\n\nNATS error replies have an empty body and the headers `Nats-Service-Error-Code` (the same status code the HTTP endpoint would return) and `Nats-Service-Error` (the message). The service is named `lcars`, so it also answers `$SRV.PING.lcars`, `$SRV.INFO.lcars` and `$SRV.STATS.lcars`.\n\nThis reference is generated from the OpenAPI document the server itself serves at [`/openapi.json`](/openapi.json), and the version shown above is the version of the running build.\n\n## Conventions\n\n- **Encoding.** Request and response bodies are JSON (`Content-Type: application/json`) unless an operation says otherwise.\n- **`HEAD`.** Every `GET` operation also answers `HEAD`, with the same status and headers and no body.\n- **Authentication.** See [Authentication](#section/Authentication) below.\n- **Dates and times.** Dates are `YYYY-MM-DD`. Timestamps are [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) with the UTC offset of the server's timezone, e.g. `2026-10-20T09:00:00-04:00`.\n- **Versioning.** Paths are not versioned yet. The build version is reported by [`GET /healthz`](#operation/getHealth).\n\n## Authentication\n\nAuthentication is on when the server is configured with a Supabase project (`supabase.url` and `supabase.secret_key`), and off otherwise, in which case anyone who can reach the server can use the API.\n\nWhen it is on:\n\n- **Devices** use a *device token*, made on the [admin page](/admin/): a username such as `dev_7f3k2m9q4x8w` and a secret password. Over HTTP, send them as [Basic auth](https://www.rfc-editor.org/rfc/rfc7617) on the device endpoints (marked *deviceToken* below). Over NATS, connect to the embedded server with them as the user and password, e.g. `nats://dev_7f3k2m9q4x8w:<secret>@<host>:4222`; devices may then only send requests to the API's request subjects and subscribe to its event subjects. Revoking a token takes effect immediately and closes the NATS connections using it. (Tokens are not checked when lcars-api connects to an external NATS server with `nats.url`; secure that server separately.)\n- **Admins** sign in on the admin page with an email and password. Admin accounts are Supabase Auth users, created by the operator (sign-ups are disabled). The admin API takes the access token from [`POST /admin/api/session`](#operation/createAdminSession) as a Bearer token.\n- `/healthz`, `/openapi.json`, `/docs` and the admin page itself are always open.\n\nThere is no TLS: use the API only on a trusted network, or put it behind a reverse proxy that adds TLS.\n\n## Errors\n\nErrors raised by an operation have a JSON body with a single `error` field:\n\n```json\n{\"error\": \"Internal Server Error\"}\n```\n\nUnexpected failures, including panics, are logged on the server and returned as a `500` with a generic message, so internal details never reach the client.\n\nRouting errors come from the router before any operation runs, and have a **plain-text** body:\n\n| Status | When | Body |\n|--------|------|------|\n| `404` | No route matches the path. | `404 page not found` |\n| `405` | The path exists, but not for this method. The `Allow` header lists the methods that are, e.g. `Allow: GET, HEAD`. | `Method Not Allowed` |\n\n## Timeouts\n\nThe server closes connections that are slow to send headers (5 s) or a request (15 s), and responses that take longer than 15 s to write. Exceptions: a live camera stream ([`GET /cameras/{sn}/stream`](#operation/getCameraStream)) stays open until the client closes it, and lock/unlock ([`POST /locks/{id}/lock`](#operation/lockDoor), [`POST /locks/{id}/unlock`](#operation/unlockDoor)) wait for Seam (up to about 25 s). Idle keep-alive connections are closed after 60 s. On `SIGTERM` or `SIGINT` it stops accepting new connections and waits for in-flight requests to finish before exiting.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -41,6 +41,10 @@
     {
       "name": "Weather",
       "description": "Current conditions at the point set by `weather.latitude` and `weather.longitude`. When either is unset, `GET /weather` answers `503`. Temperatures are Fahrenheit and the wind speed is miles per hour. The location is not included in the response."
+    },
+    {
+      "name": "Locks",
+      "description": "Smart locks through [Seam](https://www.seam.co), configured with `seam.api_key` (`LCARS_SEAM_API_KEY`). When that is unset, every lock operation answers `503`.\n\n`GET /locks` is the same catalog as `lcars.locks.list`. Lock and unlock wait for Seam to confirm the action (or fail) before answering. The Seam API key stays on this server; devices talk only to lcars-api."
     },
     {
       "name": "Documentation",
@@ -246,7 +250,9 @@
     "/cameras": {
       "get": {
         "operationId": "listCameras",
-        "tags": ["Cameras"],
+        "tags": [
+          "Cameras"
+        ],
         "summary": "List cameras",
         "description": "The cameras the configured proxy currently reports, in the proxy's order. `stream_path` and `snapshot_path` are paths on this server. An empty `cameras` array means the proxy is up and has no devices.",
         "responses": {
@@ -254,7 +260,9 @@
             "description": "The catalog.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/CameraList" },
+                "schema": {
+                  "$ref": "#/components/schemas/CameraList"
+                },
                 "example": {
                   "cameras": [
                     {
@@ -269,24 +277,37 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
           "503": {
             "description": "Cameras are not configured, or the camera proxy could not be reached.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "cameras are not configured: set eufy.url in the config file" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "cameras are not configured: set eufy.url in the config file"
+                }
               }
             }
           }
         },
-        "security": [{ "deviceToken": [] }, {}]
+        "security": [
+          {
+            "deviceToken": []
+          },
+          {}
+        ]
       }
     },
     "/weather": {
       "get": {
         "operationId": "getWeather",
-        "tags": ["Weather"],
+        "tags": [
+          "Weather"
+        ],
         "summary": "Current conditions",
         "description": "The current conditions at the configured point, in Fahrenheit and miles per hour, rounded to whole numbers. The same report is served over NATS on `lcars.weather.get`. An empty request body is the whole NATS request.",
         "responses": {
@@ -294,7 +315,9 @@
             "description": "The current report.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/WeatherReport" },
+                "schema": {
+                  "$ref": "#/components/schemas/WeatherReport"
+                },
                 "example": {
                   "summary": "Clear",
                   "temperature_f": 72,
@@ -307,24 +330,37 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
           "503": {
             "description": "Weather is not configured, or the forecast could not be read.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "weather is not configured: set weather.latitude and weather.longitude in the config file" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "weather is not configured: set weather.latitude and weather.longitude in the config file"
+                }
               }
             }
           }
         },
-        "security": [{ "deviceToken": [] }, {}]
+        "security": [
+          {
+            "deviceToken": []
+          },
+          {}
+        ]
       }
     },
     "/cameras/{sn}/stream": {
       "get": {
         "operationId": "getCameraStream",
-        "tags": ["Cameras"],
+        "tags": [
+          "Cameras"
+        ],
         "summary": "Open a live camera stream",
         "description": "Annex-B video for the camera (`video/octet-stream`). The response stays open until the client closes it, which stops that viewer on the proxy. It is not limited by the 15 second write timeout. A failure before the first byte is a JSON error. After the stream has started, a failure closes the connection.",
         "parameters": [
@@ -333,7 +369,10 @@
             "in": "path",
             "required": true,
             "description": "Camera serial: 1 to 32 letters or digits.",
-            "schema": { "type": "string", "pattern": "^[A-Za-z0-9]{1,32}$" },
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{1,32}$"
+            },
             "example": "CAM1"
           }
         ],
@@ -342,13 +381,18 @@
             "description": "The live video. Read until you close the response.",
             "headers": {
               "Cache-Control": {
-                "schema": { "type": "string" },
+                "schema": {
+                  "type": "string"
+                },
                 "description": "Always `no-store`."
               }
             },
             "content": {
               "video/octet-stream": {
-                "schema": { "type": "string", "format": "binary" }
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
               }
             }
           },
@@ -356,18 +400,28 @@
             "description": "The serial is not 1 to 32 letters or digits.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "invalid serial" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "invalid serial"
+                }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
           "404": {
             "description": "The proxy has no camera with that serial.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "camera not found" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "camera not found"
+                }
               }
             }
           },
@@ -375,19 +429,30 @@
             "description": "Cameras are not configured, or the camera proxy could not be reached.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "cameras are unavailable" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "cameras are unavailable"
+                }
               }
             }
           }
         },
-        "security": [{ "deviceToken": [] }, {}]
+        "security": [
+          {
+            "deviceToken": []
+          },
+          {}
+        ]
       }
     },
     "/cameras/{sn}/snapshot": {
       "get": {
         "operationId": "getCameraSnapshot",
-        "tags": ["Cameras"],
+        "tags": [
+          "Cameras"
+        ],
         "summary": "Read a camera snapshot",
         "description": "A JPEG still for this camera. The proxy prefers a retained push thumbnail and may take a short live burst when none is kept. A miss is `404`. The wait is not limited by the 15 second write timeout.",
         "parameters": [
@@ -396,7 +461,10 @@
             "in": "path",
             "required": true,
             "description": "Camera serial: 1 to 32 letters or digits.",
-            "schema": { "type": "string", "pattern": "^[A-Za-z0-9]{1,32}$" },
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{1,32}$"
+            },
             "example": "CAM1"
           }
         ],
@@ -405,13 +473,18 @@
             "description": "The JPEG still.",
             "headers": {
               "Cache-Control": {
-                "schema": { "type": "string" },
+                "schema": {
+                  "type": "string"
+                },
                 "description": "Always `no-store`."
               }
             },
             "content": {
               "image/jpeg": {
-                "schema": { "type": "string", "format": "binary" }
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
               }
             }
           },
@@ -419,18 +492,28 @@
             "description": "The serial is not 1 to 32 letters or digits.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "invalid serial" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "invalid serial"
+                }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
           "404": {
             "description": "No still for that camera.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "camera not found" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "camera not found"
+                }
               }
             }
           },
@@ -438,13 +521,22 @@
             "description": "Cameras are not configured, or the camera proxy could not be reached.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "cameras are unavailable" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "cameras are unavailable"
+                }
               }
             }
           }
         },
-        "security": [{ "deviceToken": [] }, {}]
+        "security": [
+          {
+            "deviceToken": []
+          },
+          {}
+        ]
       }
     },
     "/openapi.json": {
@@ -520,23 +612,32 @@
     "/reminders": {
       "get": {
         "operationId": "listReminders",
-        "tags": ["Reminders"],
+        "tags": [
+          "Reminders"
+        ],
         "summary": "List reminders",
         "description": "Returns every reminder, oldest first. The same list is available over NATS as a protobuf `ListRemindersResponse`, by sending a `ListRemindersRequest` (or an empty body) on `lcars.reminders.list`. Subscribe to `lcars.reminders.updated` to learn when to fetch it again.\n\nWhen authentication is on, this needs a device token (Basic auth).",
-        "security": [{ "deviceToken": [] }, {}],
+        "security": [
+          {
+            "deviceToken": []
+          },
+          {}
+        ],
         "responses": {
           "200": {
             "description": "The reminder list.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ReminderList" },
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderList"
+                },
                 "example": {
                   "updated_at": "2030-03-04T12:00:00Z",
                   "reminders": [
                     {
                       "id": "rem_7f3k2m9q4x8w",
                       "title": "Bring in recycling bin",
-                      "detail": "Due today · House",
+                      "detail": "Due today \u00b7 House",
                       "accent": "purple",
                       "done": false
                     }
@@ -545,14 +646,22 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "500": { "$ref": "#/components/responses/InternalError" },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
           "503": {
             "description": "No reminders file is configured.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "reminders are not configured: set supabase.url and supabase.secret_key in the config file" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "reminders are not configured: set supabase.url and supabase.secret_key in the config file"
+                }
               }
             }
           }
@@ -562,24 +671,37 @@
     "/reminders/{id}": {
       "post": {
         "operationId": "setReminder",
-        "tags": ["Reminders"],
+        "tags": [
+          "Reminders"
+        ],
         "summary": "Mark a reminder done or open",
         "description": "Sets whether the reminder is done and returns the whole list, which is also the reply to `lcars.reminders.set`. The id is a lookup key, not a filesystem path.\n\nWhen authentication is on, this needs a device token (Basic auth).",
-        "security": [{ "deviceToken": [] }, {}],
+        "security": [
+          {
+            "deviceToken": []
+          },
+          {}
+        ],
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
             "description": "The reminder's id.",
-            "schema": { "type": "string", "pattern": "^rem_[a-z0-9]{12}$", "example": "rem_7f3k2m9q4x8w" }
+            "schema": {
+              "type": "string",
+              "pattern": "^rem_[a-z0-9]{12}$",
+              "example": "rem_7f3k2m9q4x8w"
+            }
           }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/SetReminderRequest" }
+              "schema": {
+                "$ref": "#/components/schemas/SetReminderRequest"
+              }
             }
           }
         },
@@ -588,29 +710,47 @@
             "description": "The reminder list after the change.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ReminderList" }
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderList"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
           "404": {
             "description": "There is no reminder with this id.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "no such reminder" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "no such reminder"
+                }
               }
             }
           },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "500": { "$ref": "#/components/responses/InternalError" },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
           "503": {
             "description": "No reminders file is configured.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "reminders are not configured: set supabase.url and supabase.secret_key in the config file" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "reminders are not configured: set supabase.url and supabase.secret_key in the config file"
+                }
               }
             }
           }
@@ -885,50 +1025,76 @@
     "/admin/api/reminders": {
       "get": {
         "operationId": "listAdminReminders",
-        "tags": ["Admin"],
+        "tags": [
+          "Admin"
+        ],
         "summary": "List reminders",
         "description": "Lists every reminder, oldest first. The same list devices see on `GET /reminders`.",
-        "security": [{ "adminSession": [] }],
+        "security": [
+          {
+            "adminSession": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "The reminder list.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ReminderList" }
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderList"
+                }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/AdminUnauthorized" },
+          "401": {
+            "$ref": "#/components/responses/AdminUnauthorized"
+          },
           "503": {
             "description": "The admin API is disabled, Supabase could not be reached, or no reminders file is configured.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
                 "examples": {
                   "disabled": {
-                    "value": { "error": "the admin API is disabled: set supabase.url and supabase.secret_key in the config file" }
+                    "value": {
+                      "error": "the admin API is disabled: set supabase.url and supabase.secret_key in the config file"
+                    }
                   },
                   "unconfigured": {
-                    "value": { "error": "reminders are not configured: set supabase.url and supabase.secret_key in the config file" }
+                    "value": {
+                      "error": "reminders are not configured: set supabase.url and supabase.secret_key in the config file"
+                    }
                   }
                 }
               }
             }
           },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       },
       "post": {
         "operationId": "createReminder",
-        "tags": ["Admin"],
+        "tags": [
+          "Admin"
+        ],
         "summary": "Add a reminder",
         "description": "Appends a reminder. It is not done. An omitted accent is purple. The display's list holds at most six.",
-        "security": [{ "adminSession": [] }],
+        "security": [
+          {
+            "adminSession": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/CreateReminderRequest" }
+              "schema": {
+                "$ref": "#/components/schemas/CreateReminderRequest"
+              }
             }
           }
         },
@@ -937,57 +1103,494 @@
             "description": "The new reminder.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Reminder" }
+                "schema": {
+                  "$ref": "#/components/schemas/Reminder"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/AdminUnauthorized" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminUnauthorized"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
           "503": {
             "description": "The admin API is disabled, Supabase could not be reached, or no reminders file is configured.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "reminders are not configured: set supabase.url and supabase.secret_key in the config file" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "reminders are not configured: set supabase.url and supabase.secret_key in the config file"
+                }
               }
             }
           },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     },
     "/admin/api/reminders/{id}": {
       "delete": {
         "operationId": "deleteReminder",
-        "tags": ["Admin"],
+        "tags": [
+          "Admin"
+        ],
         "summary": "Remove a reminder",
         "description": "Deletes a reminder. Devices see the change on their next list, and on `lcars.reminders.updated`.",
-        "security": [{ "adminSession": [] }],
+        "security": [
+          {
+            "adminSession": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
             "description": "The reminder's id.",
-            "schema": { "type": "string", "pattern": "^rem_[a-z0-9]{12}$", "example": "rem_7f3k2m9q4x8w" }
+            "schema": {
+              "type": "string",
+              "pattern": "^rem_[a-z0-9]{12}$",
+              "example": "rem_7f3k2m9q4x8w"
+            }
           }
         ],
         "responses": {
-          "204": { "description": "Removed." },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/AdminUnauthorized" },
+          "204": {
+            "description": "Removed."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminUnauthorized"
+          },
           "404": {
             "description": "There is no reminder with this id.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "no such reminder" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "no such reminder"
+                }
               }
             }
           },
-          "503": { "$ref": "#/components/responses/AdminUnavailable" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "503": {
+            "$ref": "#/components/responses/AdminUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/locks": {
+      "get": {
+        "operationId": "listLocks",
+        "tags": [
+          "Locks"
+        ],
+        "summary": "List locks",
+        "description": "The smart locks Seam currently reports, in Seam's order. An empty `locks` array means Seam is reachable and has no locks.",
+        "responses": {
+          "200": {
+            "description": "The catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockList"
+                },
+                "example": {
+                  "locks": [
+                    {
+                      "id": "11111111-1111-1111-1111-111111111111",
+                      "name": "Front door",
+                      "locked": true,
+                      "online": true,
+                      "can_lock": true,
+                      "can_unlock": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "description": "Locks are not configured, or Seam could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "locks are not configured: set seam.api_key in the config file"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "deviceToken": []
+          },
+          {}
+        ]
+      }
+    },
+    "/locks/{id}/lock": {
+      "post": {
+        "operationId": "lockDoor",
+        "tags": [
+          "Locks"
+        ],
+        "summary": "Lock a door",
+        "description": "Asks Seam to lock the door and waits until the action succeeds or fails (up to about 25 seconds). The response is not limited by the 15 second write timeout.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Seam device id (a UUID) from `GET /locks`.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "11111111-1111-1111-1111-111111111111"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The door is locked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockAction"
+                },
+                "example": {
+                  "id": "11111111-1111-1111-1111-111111111111",
+                  "locked": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The id is not a UUID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "invalid lock id"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Seam has no lock with that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "lock not found"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Seam reported that the lock action failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "lock action failed"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Locks are not configured, or Seam could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "locks are not configured: set seam.api_key in the config file"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Seam did not finish the action in time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "lock action timed out"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "deviceToken": []
+          },
+          {}
+        ]
+      }
+    },
+    "/locks/{id}/unlock": {
+      "post": {
+        "operationId": "unlockDoor",
+        "tags": [
+          "Locks"
+        ],
+        "summary": "Unlock a door",
+        "description": "Asks Seam to unlock the door and waits until the action succeeds or fails (up to about 25 seconds). The response is not limited by the 15 second write timeout.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Seam device id (a UUID) from `GET /locks`.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "11111111-1111-1111-1111-111111111111"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The door is unlocked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockAction"
+                },
+                "example": {
+                  "id": "11111111-1111-1111-1111-111111111111",
+                  "locked": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The id is not a UUID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "invalid lock id"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Seam has no lock with that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "lock not found"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Seam reported that the unlock action failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "lock action failed"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Locks are not configured, or Seam could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "locks are not configured: set seam.api_key in the config file"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Seam did not finish the action in time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "lock action timed out"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "deviceToken": []
+          },
+          {}
+        ]
+      }
+    },
+    "/admin/api/calendars": {
+      "get": {
+        "operationId": "listCalendars",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List calendars",
+        "description": "Lists every calendar found in `calendar.dir`, with the display name and category set for it. `source` is the name used when `name` is empty.",
+        "security": [
+          {
+            "adminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The calendars.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "calendars"
+                  ],
+                  "properties": {
+                    "calendars": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CalendarSource"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminUnauthorized"
+          },
+          "503": {
+            "description": "The admin API is disabled, or `calendar.dir` is not set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveCalendar",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Name a calendar",
+        "description": "Sets the display name and category for a calendar from the list. An empty name keeps the source. An empty name and category together clear the saved label. The panel shows the first 8 characters of the name. Saving publishes `lcars.calendar.updated`.",
+        "security": [
+          {
+            "adminSession": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveCalendarRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The calendar, with the name and category now in effect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarSource"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminUnauthorized"
+          },
+          "404": {
+            "description": "No calendar in the directory has this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "no such calendar"
+                }
+              }
+            }
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "503": {
+            "$ref": "#/components/responses/AdminUnavailable"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
         }
       }
     }
@@ -996,28 +1599,45 @@
     "schemas": {
       "Reminder": {
         "type": "object",
-        "required": ["id", "title", "detail", "accent", "done"],
+        "required": [
+          "id",
+          "title",
+          "detail",
+          "accent",
+          "done"
+        ],
         "properties": {
           "id": {
             "type": "string",
             "description": "`rem_` and 12 lowercase letters or digits.",
             "pattern": "^rem_[a-z0-9]{12}$",
-            "examples": ["rem_7f3k2m9q4x8w"]
+            "examples": [
+              "rem_7f3k2m9q4x8w"
+            ]
           },
           "title": {
             "type": "string",
             "description": "The words shown on the row.",
-            "examples": ["Bring in recycling bin"]
+            "examples": [
+              "Bring in recycling bin"
+            ]
           },
           "detail": {
             "type": "string",
             "description": "The smaller line under the title. Empty if there is none.",
-            "examples": ["Due today · House"]
+            "examples": [
+              "Due today \u00b7 House"
+            ]
           },
           "accent": {
             "type": "string",
             "description": "Color of the row's end cap, matching the display.",
-            "enum": ["purple", "blue", "orange", "peach"]
+            "enum": [
+              "purple",
+              "blue",
+              "orange",
+              "peach"
+            ]
           },
           "done": {
             "type": "boolean",
@@ -1027,7 +1647,10 @@
       },
       "ReminderList": {
         "type": "object",
-        "required": ["updated_at", "reminders"],
+        "required": [
+          "updated_at",
+          "reminders"
+        ],
         "properties": {
           "updated_at": {
             "type": "string",
@@ -1037,43 +1660,79 @@
           "reminders": {
             "type": "array",
             "maxItems": 6,
-            "items": { "$ref": "#/components/schemas/Reminder" }
+            "items": {
+              "$ref": "#/components/schemas/Reminder"
+            }
           }
         }
       },
       "CreateReminderRequest": {
         "type": "object",
-        "required": ["title"],
+        "required": [
+          "title"
+        ],
         "properties": {
-          "title": { "type": "string", "minLength": 1, "maxLength": 80, "examples": ["Bring in recycling bin"] },
-          "detail": { "type": "string", "maxLength": 120, "examples": ["Due today · House"] },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "examples": [
+              "Bring in recycling bin"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 120,
+            "examples": [
+              "Due today \u00b7 House"
+            ]
+          },
           "accent": {
             "type": "string",
             "description": "Defaults to `purple`.",
-            "enum": ["purple", "blue", "orange", "peach"]
+            "enum": [
+              "purple",
+              "blue",
+              "orange",
+              "peach"
+            ]
           }
         }
       },
       "SetReminderRequest": {
         "type": "object",
-        "required": ["done"],
+        "required": [
+          "done"
+        ],
         "properties": {
-          "done": { "type": "boolean" }
+          "done": {
+            "type": "boolean"
+          }
         }
       },
       "Camera": {
         "type": "object",
-        "required": ["sn", "name", "has_camera", "stream_path", "snapshot_path"],
+        "required": [
+          "sn",
+          "name",
+          "has_camera",
+          "stream_path",
+          "snapshot_path"
+        ],
         "properties": {
           "sn": {
             "type": "string",
             "description": "Camera serial, letters and digits.",
-            "examples": ["CAM1"]
+            "examples": [
+              "CAM1"
+            ]
           },
           "name": {
             "type": "string",
             "description": "Name from the camera account. May be empty.",
-            "examples": ["Front door"]
+            "examples": [
+              "Front door"
+            ]
           },
           "has_camera": {
             "type": "boolean",
@@ -1082,39 +1741,76 @@
           "stream_path": {
             "type": "string",
             "description": "Path of the live Annex-B video on this server.",
-            "examples": ["/cameras/CAM1/stream"]
+            "examples": [
+              "/cameras/CAM1/stream"
+            ]
           },
           "snapshot_path": {
             "type": "string",
             "description": "Path of the latest stored JPEG on this server.",
-            "examples": ["/cameras/CAM1/snapshot"]
+            "examples": [
+              "/cameras/CAM1/snapshot"
+            ]
           }
         }
       },
       "WeatherReport": {
         "type": "object",
-        "required": ["summary", "temperature_f", "feels_like_f", "high_f", "low_f", "wind_mph", "observed_at"],
+        "required": [
+          "summary",
+          "temperature_f",
+          "feels_like_f",
+          "high_f",
+          "low_f",
+          "wind_mph",
+          "observed_at"
+        ],
         "properties": {
           "summary": {
             "type": "string",
             "description": "Short condition, such as \"Partly cloudy\".",
-            "examples": ["Clear"]
+            "examples": [
+              "Clear"
+            ]
           },
-          "temperature_f": { "type": "integer", "description": "Current temperature, Fahrenheit." },
-          "feels_like_f": { "type": "integer", "description": "Current apparent temperature, Fahrenheit." },
-          "high_f": { "type": "integer", "description": "Today's forecast high, Fahrenheit." },
-          "low_f": { "type": "integer", "description": "Today's forecast low, Fahrenheit." },
-          "wind_mph": { "type": "integer", "description": "Current wind speed, miles per hour." },
-          "observed_at": { "type": "string", "format": "date-time", "description": "When this report was read." }
+          "temperature_f": {
+            "type": "integer",
+            "description": "Current temperature, Fahrenheit."
+          },
+          "feels_like_f": {
+            "type": "integer",
+            "description": "Current apparent temperature, Fahrenheit."
+          },
+          "high_f": {
+            "type": "integer",
+            "description": "Today's forecast high, Fahrenheit."
+          },
+          "low_f": {
+            "type": "integer",
+            "description": "Today's forecast low, Fahrenheit."
+          },
+          "wind_mph": {
+            "type": "integer",
+            "description": "Current wind speed, miles per hour."
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When this report was read."
+          }
         }
       },
       "CameraList": {
         "type": "object",
-        "required": ["cameras"],
+        "required": [
+          "cameras"
+        ],
         "properties": {
           "cameras": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/Camera" }
+            "items": {
+              "$ref": "#/components/schemas/Camera"
+            }
           }
         }
       },
@@ -1412,6 +2108,131 @@
             "maxLength": 100,
             "description": "A label for the device. Leading and trailing spaces are removed.",
             "example": "Kitchen display"
+          }
+        }
+      },
+      "Lock": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "locked",
+          "online",
+          "can_lock",
+          "can_unlock"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Seam device id.",
+            "examples": [
+              "11111111-1111-1111-1111-111111111111"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name from Seam. May be empty.",
+            "examples": [
+              "Front door"
+            ]
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "True when the lock reports it is locked."
+          },
+          "online": {
+            "type": "boolean",
+            "description": "True when Seam reports the lock is online."
+          },
+          "can_lock": {
+            "type": "boolean",
+            "description": "True when this lock can be locked remotely."
+          },
+          "can_unlock": {
+            "type": "boolean",
+            "description": "True when this lock can be unlocked remotely."
+          }
+        }
+      },
+      "LockList": {
+        "type": "object",
+        "required": [
+          "locks"
+        ],
+        "properties": {
+          "locks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Lock"
+            }
+          }
+        }
+      },
+      "LockAction": {
+        "type": "object",
+        "required": [
+          "id",
+          "locked"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Seam device id that was acted on."
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "True after a successful lock; false after a successful unlock."
+          }
+        }
+      },
+      "CalendarSource": {
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "title",
+          "path",
+          "name",
+          "category"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable key for this calendar: `mail:` plus the mailbox, or `file:` plus its path under `calendar.dir`.",
+            "example": "mail:ada@example.com"
+          },
+          "source": {
+            "type": "string",
+            "description": "Name used when `name` is empty.",
+            "example": "ada"
+          },
+          "title": {
+            "type": "string",
+            "description": "The file's `X-WR-CALNAME`, or `source` when it has none.",
+            "example": "Ada Google Calendar"
+          },
+          "path": {
+            "type": "string",
+            "description": "Path of the `.ics` file under `calendar.dir`. Several files that share an id are joined with a comma.",
+            "example": "ada.ics"
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name set on the admin page. Empty when the source is shown instead.",
+            "example": "Family"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "",
+              "work",
+              "band",
+              "personal",
+              "house"
+            ],
+            "description": "Lane set on the admin page. Empty when none is set."
           }
         }
       }

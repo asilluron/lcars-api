@@ -184,7 +184,7 @@ func TestCalendarJSONShape(t *testing.T) {
 		t.Error("empty day: events is null, want []")
 	}
 	ev := raw.Days[1].Events[0]
-	for _, key := range []string{"id", "title", "calendar", "location", "all_day", "start", "end", "start_time", "end_time"} {
+	for _, key := range []string{"id", "title", "calendar", "category", "location", "all_day", "start", "end", "start_time", "end_time"} {
 		if _, ok := ev[key]; !ok {
 			t.Errorf("event has no %q key", key)
 		}

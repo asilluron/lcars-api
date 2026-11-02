@@ -19,6 +19,10 @@ import (
 	lcarsv1 "github.com/asilluron/lcars-api/gen/go/lcars/v1"
 )
 
+// fixtureGoogleID is the stable id of testdata/calendars/google.ics, whose
+// events belong to the fictional mailbox ada@example.com.
+const fixtureGoogleID = "mail:ada@example.com"
+
 // calendarFixtures holds fictional .ics files for the week of 4–10 March
 // 2030, which includes the start of US daylight saving time (10 March). It
 // also holds one invalid .ics file and one non-.ics file, which must be
@@ -29,7 +33,7 @@ const calendarFixtures = "testdata/calendars"
 // fixtures, in America/New_York, one line per day.
 var fixtureWeek = []string{
 	"2030-03-04 Monday: work/Standup 09:00-09:15",
-	"2030-03-05 Tuesday: work/Standup 09:00-09:15, Family/Soccer practice (field 2) 18:00-19:00",
+	"2030-03-05 Tuesday: work/Standup 09:00-09:15, ada/Pay invoices 15:00-16:00, Family/Soccer practice (field 2) 18:00-19:00",
 	"2030-03-06 Wednesday: work/Standup 09:00-09:15, work/Design review 10:00-11:00",
 	"2030-03-07 Thursday: work/Standup 09:00-09:15",
 	"2030-03-08 Friday: Family/Grandparents visit all-day, work/Standup 09:00-09:15, Family/Pizza night 19:00-20:30",
@@ -50,6 +54,7 @@ type calendarResponse struct {
 			ID        string  `json:"id"`
 			Title     string  `json:"title"`
 			Calendar  string  `json:"calendar"`
+			Category  string  `json:"category"`
 			Location  string  `json:"location"`
 			AllDay    bool    `json:"all_day"`
 			Start     string  `json:"start"`
@@ -148,7 +153,7 @@ func TestCalendar(t *testing.T) {
 
 	for _, want := range []map[string]any{
 		{"msg": "config loaded", "file": config},
-		{"msg": "calendar loaded", "files": float64(4), "skipped": float64(1)},
+		{"msg": "calendar loaded", "files": float64(5), "skipped": float64(1)},
 		{"msg": "calendar: skipping file", "level": "WARN", "path": "broken.ics"},
 	} {
 		if !p.hasLog(want) {

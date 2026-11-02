@@ -8,6 +8,9 @@
 //! | [`subjects::CALENDAR_GET`]             | request/reply | [`v1::GetCalendarRequest`] → [`v1::GetCalendarResponse`] |
 //! | [`subjects::CALENDAR_UPDATED`]         | event         | [`v1::CalendarUpdated`]                              |
 //! | [`subjects::CAMERAS_LIST`]             | request/reply | [`v1::ListCamerasRequest`] → [`v1::ListCamerasResponse`] |
+//! | [`subjects::LOCKS_LIST`]               | request/reply | [`v1::ListLocksRequest`] → [`v1::ListLocksResponse`] |
+//! | [`subjects::LOCKS_LOCK`]               | request/reply | [`v1::LockDoorRequest`] → [`v1::LockDoorResponse`] |
+//! | [`subjects::LOCKS_UNLOCK`]             | request/reply | [`v1::UnlockDoorRequest`] → [`v1::UnlockDoorResponse`] |
 //! | [`subjects::REMINDERS_LIST`]           | request/reply | [`v1::ListRemindersRequest`] → [`v1::ListRemindersResponse`] |
 //! | [`subjects::REMINDERS_SET`]            | request/reply | [`v1::SetReminderRequest`] → [`v1::ListRemindersResponse`] |
 //! | [`subjects::REMINDERS_UPDATED`]        | event         | [`v1::RemindersUpdated`]                             |
@@ -31,7 +34,8 @@
 //! ```
 //!
 //! See `examples/agenda.rs` for a calendar client, `examples/cameras.rs`
-//! for listing cameras and opening the HTTP still and live stream, and
+//! for listing cameras and opening the HTTP still and live stream,
+//! `examples/locks.rs` for listing and locking a door, and
 //! `examples/training.rs` for sending a chunk of training audio.
 //!
 //! [lcars-api]: https://github.com/asilluron/lcars-api
@@ -65,6 +69,17 @@ pub mod subjects {
     /// this server. Video is not sent on NATS. Close the stream response
     /// to stop that viewer.
     pub const CAMERAS_LIST: &str = "lcars.cameras.list";
+    /// Request a [`ListLocksRequest`](crate::v1::ListLocksRequest); the
+    /// reply is a [`ListLocksResponse`](crate::v1::ListLocksResponse).
+    pub const LOCKS_LIST: &str = "lcars.locks.list";
+    /// Send a [`LockDoorRequest`](crate::v1::LockDoorRequest); the reply is
+    /// a [`LockDoorResponse`](crate::v1::LockDoorResponse). The server waits
+    /// for Seam to confirm the action.
+    pub const LOCKS_LOCK: &str = "lcars.locks.lock";
+    /// Send an [`UnlockDoorRequest`](crate::v1::UnlockDoorRequest); the
+    /// reply is an [`UnlockDoorResponse`](crate::v1::UnlockDoorResponse).
+    /// The server waits for Seam to confirm the action.
+    pub const LOCKS_UNLOCK: &str = "lcars.locks.unlock";
     /// Request a [`ListRemindersRequest`](crate::v1::ListRemindersRequest);
     /// the reply is a [`ListRemindersResponse`](crate::v1::ListRemindersResponse).
     pub const REMINDERS_LIST: &str = "lcars.reminders.list";

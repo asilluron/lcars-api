@@ -137,6 +137,21 @@ control.
 
 `make eufy` type-checks and tests the proxy without an Eufy account.
 
+## Locks
+
+Smart locks are controlled through [Seam](https://www.seam.co). Set
+`seam.api_key` (or `LCARS_SEAM_API_KEY`) to a Seam API key. Leave it unset
+and the lock endpoints answer `503`. The key stays on this machine; devices
+talk only to lcars-api. Optionally set `seam.url` (default
+`https://connect.getseam.com`) to point at a mock for tests.
+
+A device lists locks with `lcars.locks.list` or `GET /locks`. Lock and unlock
+with `lcars.locks.lock` / `lcars.locks.unlock`, or
+`POST /locks/{id}/lock` / `POST /locks/{id}/unlock`. Those wait for Seam to
+confirm the action (or fail) before answering, up to about 25 seconds. Ids
+are Seam device UUIDs from the list. All need a device token when
+authentication is on.
+
 ## Weather
 
 `lcars.weather.get` (NATS) and `GET /weather` (HTTP) serve the current
@@ -161,6 +176,9 @@ message from [`proto/lcars/v1`](proto/lcars/v1), which documents each field.
 | `lcars.calendar.get`     | request/reply | `GetCalendarRequest` → `GetCalendarResponse`. See [Calendar](#calendar). |
 | `lcars.calendar.updated` | event         | `CalendarUpdated`, published when the `.ics` files change. Request the calendar again when you get one. |
 | `lcars.cameras.list`     | request/reply | `ListCamerasRequest` → `ListCamerasResponse`. See [Cameras](#cameras). An empty body is the whole request. |
+| `lcars.locks.list`       | request/reply | `ListLocksRequest` → `ListLocksResponse`. See [Locks](#locks). An empty body is the whole request. |
+| `lcars.locks.lock`       | request/reply | `LockDoorRequest` → `LockDoorResponse`. See [Locks](#locks). |
+| `lcars.locks.unlock`     | request/reply | `UnlockDoorRequest` → `UnlockDoorResponse`. See [Locks](#locks). |
 | `lcars.reminders.list`   | request/reply | `ListRemindersRequest` → `ListRemindersResponse`. See [Reminders](#reminders). An empty body is the whole request. |
 | `lcars.reminders.set`    | request/reply | `SetReminderRequest` → `ListRemindersResponse`, the list after marking one reminder done or open. |
 | `lcars.reminders.updated` | event        | `RemindersUpdated`, published when a reminder is added, removed, or marked done or open. Request the list again when you get one. |
@@ -222,6 +240,9 @@ Full HTTP reference: run the server and open <http://localhost:8080/docs>.
 | GET    | `/cameras`     | JSON version of `lcars.cameras.list`. See [Cameras](#cameras). Needs a device token when authentication is on. |
 | GET    | `/cameras/{sn}/stream` | Live Annex-B video for that camera. Stays open until the client closes it. Needs a device token when authentication is on. |
 | GET    | `/cameras/{sn}/snapshot` | Latest stored JPEG for that camera. `404` does not wake it. Needs a device token when authentication is on. |
+| GET    | `/locks`       | JSON version of `lcars.locks.list`. See [Locks](#locks). Needs a device token when authentication is on. |
+| POST   | `/locks/{id}/lock` | Lock a door (same as `lcars.locks.lock`). Waits for Seam. Needs a device token when authentication is on. |
+| POST   | `/locks/{id}/unlock` | Unlock a door (same as `lcars.locks.unlock`). Waits for Seam. Needs a device token when authentication is on. |
 | GET    | `/reminders`    | JSON version of `lcars.reminders.list`. See [Reminders](#reminders). Needs a device token when authentication is on. |
 | POST   | `/reminders/{id}` | JSON version of `lcars.reminders.set`: mark that reminder done or open. Needs a device token when authentication is on. |
 | GET    | `/weather`      | JSON version of `lcars.weather.get`. See [Weather](#weather). Needs a device token when authentication is on. |
@@ -231,6 +252,7 @@ Full HTTP reference: run the server and open <http://localhost:8080/docs>.
 | POST   | `/admin/api/session` | Admin sign-in: email and password for an access token. |
 | GET, POST | `/admin/api/tokens` | List device tokens, or create one (the response has its secret). Needs an admin access token (Bearer). |
 | DELETE | `/admin/api/tokens/{id}` | Revoke a device token. Needs an admin access token. |
+| GET, PUT | `/admin/api/calendars` | List calendars, or set the display name and category for one. Needs an admin access token. |
 | GET, POST | `/admin/api/reminders` | List reminders, or add one. Needs an admin access token. |
 | DELETE | `/admin/api/reminders/{id}` | Remove a reminder. Needs an admin access token. |
 
@@ -269,6 +291,7 @@ curl 'localhost:8080/calendar?from=2026-10-20&days=7'
           "id": "4f0d7c1a@example.com/20261020T130000Z",
           "title": "Team standup",
           "calendar": "work",
+          "category": "",
           "location": "Video call",
           "all_day": false,
           "start": "2026-10-20T09:00:00-04:00",
@@ -292,10 +315,18 @@ curl 'localhost:8080/calendar?from=2026-10-20&days=7'
   occurrences. Times are converted to the configured `timezone`.
 
 To set it up, point `calendar.dir` in `lcars.toml` at a directory of `.ics`
-files. Subdirectories are read too. Each event's calendar name is the file's
-`X-WR-CALNAME` if set, otherwise its top-level subdirectory, otherwise the file
-name, so `family.ics` and `family/*.ics` both give a calendar called `family`.
-Files that can't be parsed are skipped with a warning in the log.
+files. Subdirectories are read too. Each event's calendar name is, in order, a
+name set for that calendar on the admin page; a short source from the file,
+such as the mailbox in a Google Calendar link (`ada` from `ada@example.com`)
+or `Gmail` when the file is a Google calendar without one; the file's
+`X-WR-CALNAME`; the top-level subdirectory; or the file name. So `family.ics`
+and `family/*.ics` both give a calendar called `family` when the file sets no
+source and no `X-WR-CALNAME`. The panel shows the first 8 characters.
+
+On the admin page, each calendar can also be given a category: `work`, `band`,
+`personal` or `house`. That is the lane the panel uses for the color and the
+filter. With no category, the panel chooses a lane from the name. Files that
+can't be parsed are skipped with a warning in the log.
 
 The directory is read at startup (the server won't start if it's missing) and
 again every `calendar.refresh_interval`, one hour by default. When a reload
@@ -398,6 +429,8 @@ startup.
 | `supabase.secret_key`       | `LCARS_SUPABASE_SECRET_KEY`       | unset            | Supabase secret key (`sb_secret_...`) or legacy `service_role` key. Keep it secret |
 | `supabase.refresh_interval` | `LCARS_SUPABASE_REFRESH_INTERVAL` | `1m`             | How often to re-read device tokens, to pick up changes made directly in the database. Minimum `1s` |
 | `eufy.url`              | `LCARS_EUFY_URL`                  | unset (disabled) | Base URL of the Eufy camera proxy, e.g. `http://127.0.0.1:3000`. No path and no credentials. See [Cameras](#cameras) |
+| `seam.api_key`          | `LCARS_SEAM_API_KEY`              | unset (disabled) | Seam API key (`seam_...`). Turns on lock list/lock/unlock. Keep it secret. See [Locks](#locks) |
+| `seam.url`              | `LCARS_SEAM_URL`                  | `https://connect.getseam.com` | Seam API base URL. Needs `seam.api_key`. Override only for tests |
 | `weather.latitude`      | `LCARS_WEATHER_LATITUDE`          | unset (disabled) | Decimal degrees, from -90 to 90. Set with `weather.longitude`. See [Weather](#weather) |
 | `weather.longitude`     | `LCARS_WEATHER_LONGITUDE`         | unset (disabled) | Decimal degrees, from -180 to 180. Set with `weather.latitude` |
 | `weather.url`           | `LCARS_WEATHER_URL`               | `https://api.open-meteo.com` | Forecast service base URL. No path and no credentials. Used only when a location is set |
@@ -437,7 +470,9 @@ internal/supabase/     minimal Supabase client: Auth sign-in, device tokens, and
 internal/adminui/      the built admin page, embedded (make admin-ui)
 internal/calendar/     reads .ics files, expands recurring events, groups them by day
 internal/reminders/    the to-do list, stored in Supabase
+internal/weather/      current conditions from Open-Meteo (or weather.url)
 internal/training/     appends training PCM to hourly WAV files under training.dir
+internal/locks/        Seam smart-lock client: list, lock, unlock
 internal/config/       config file and environment variables
 internal/server/       HTTP routes, handlers, middleware
 internal/server/api/   OpenAPI document and Redoc docs page (embedded)

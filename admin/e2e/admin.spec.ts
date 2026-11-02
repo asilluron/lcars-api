@@ -89,6 +89,30 @@ test("dismissing the revoke dialog keeps the token", async ({ page }) => {
   await expect(row).toHaveCount(0);
 });
 
+test("names a calendar and clears it", async ({ page }) => {
+  await signIn(page);
+  const row = page.getByTestId("calendar-mail:ada@example.com");
+  await expect(row).toContainText("Ada Google Calendar");
+  await expect(row).toContainText("Source ada");
+
+  await row.getByLabel("Display name for google.ics").fill("Family");
+  await row.getByLabel("Category for google.ics").selectOption("personal");
+  await row.getByRole("button", { name: "Save google.ics" }).click();
+  await expect(page.getByTestId("calendar-saved")).toHaveText("Saved google.ics");
+
+  await page.reload();
+  await expect(row.getByLabel("Display name for google.ics")).toHaveValue("Family");
+  await expect(row.getByLabel("Category for google.ics")).toHaveValue("personal");
+
+  await row.getByLabel("Display name for google.ics").fill("");
+  await row.getByLabel("Category for google.ics").selectOption("");
+  await row.getByRole("button", { name: "Save google.ics" }).click();
+  await expect(page.getByTestId("calendar-saved")).toHaveText("Saved google.ics");
+  await page.reload();
+  await expect(row.getByLabel("Display name for google.ics")).toHaveValue("");
+  await expect(row.getByLabel("Category for google.ics")).toHaveValue("");
+});
+
 test("adds and removes a reminder", async ({ page }) => {
   await signIn(page);
   const title = `Bring in recycling bin ${Date.now()}`;

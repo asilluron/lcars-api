@@ -133,6 +133,20 @@
 # Env: LCARS_EUFY_URL
 # url = "http://127.0.0.1:3000"
 
+[seam]
+# Seam smart locks (https://www.seam.co). When the API key is set, devices
+# can list locks and lock or unlock them through this server. The key stays
+# on this machine; devices talk only to lcars-api. Leave unset to disable
+# locks. Keep the key in this file (which is gitignored) or the environment,
+# never in the repository.
+# Env: LCARS_SEAM_API_KEY
+# api_key = "seam_REPLACE_ME"
+
+# Seam API base URL. Defaults to https://connect.getseam.com. Override only
+# for tests.
+# Env: LCARS_SEAM_URL
+# url = "https://connect.getseam.com"
+
 [weather]
 # Where to read the forecast for lcars.weather.get and GET /weather, as
 # decimal degrees. Set both, or neither. The values are sent to the forecast

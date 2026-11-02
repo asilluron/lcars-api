@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"context"
+	"encoding/base64"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -423,4 +424,85 @@ func TestConcurrentEvents(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+// googleEvent is a VEVENT body whose Google Calendar link carries calendarID
+// (an email) as the calendar the event belongs to.
+func googleEvent(calendarID, summary string) string {
+	eid := base64.StdEncoding.EncodeToString([]byte("evt " + calendarID))
+	return "UID:evt@google.com\nSUMMARY:" + summary + "\nDTSTART:20300305T150000\nDTEND:20300305T160000\n" +
+		"URL:https://www.google.com/calendar/event?eid=" + eid
+}
+
+func TestCalendarSource(t *testing.T) {
+	s := loadStore(t, map[string]string{
+		"ada.ics": vcal("X-WR-CALNAME:Ada Google Calendar", googleEvent("ada@example.com", "Invoices")),
+		"group.ics": vcal("X-WR-CALNAME:US Holidays",
+			googleEvent("en.usa#holiday@group.calendar.google.com", "Holiday")),
+		"plain.ics": vcal("X-WR-CALNAME:Holidays",
+			"UID:h@example.com\nSUMMARY:Named\nDTSTART:20300305T100000"),
+		"gmail.ics": vcal("X-WR-CALNAME:Imported",
+			"UID:only@google.com\nSUMMARY:No link\nDTSTART:20300305T110000"),
+	})
+
+	got, _ := s.Events(day(4), day(11))
+	names := map[string]string{}
+	for _, ev := range got {
+		names[ev.Title] = ev.Calendar
+	}
+	want := map[string]string{
+		"Invoices": "ada",
+		"Holiday":  "Gmail",
+		"Named":    "Holidays",
+		"No link":  "Gmail",
+	}
+	if len(names) != len(want) {
+		t.Errorf("got events %v, want %v", names, want)
+	}
+	for title, cal := range want {
+		if names[title] != cal {
+			t.Errorf("%s: calendar = %q, want %q", title, names[title], cal)
+		}
+	}
+
+	var ada CatalogEntry
+	for _, entry := range s.Catalog() {
+		if entry.Source == "ada" {
+			ada = entry
+		}
+	}
+	if ada.ID != "mail:ada@example.com" || ada.Title != "Ada Google Calendar" || ada.Path != "ada.ics" {
+		t.Errorf("catalog entry = %+v", ada)
+	}
+}
+
+func TestCalendarLabelOverride(t *testing.T) {
+	s := loadStore(t, map[string]string{
+		"ada.ics": vcal("X-WR-CALNAME:Ada Google Calendar", googleEvent("ada@example.com", "Invoices")),
+	})
+	if !s.SetLabels(map[string]Label{"mail:ada@example.com": {Name: "Family", Category: "personal"}}) {
+		t.Fatal("SetLabels reported no change")
+	}
+	if s.SetLabels(map[string]Label{"mail:ada@example.com": {Name: "Family", Category: "personal"}}) {
+		t.Fatal("SetLabels reported a change for the same labels")
+	}
+	got, _ := s.Events(day(4), day(11))
+	if len(got) != 1 || got[0].Calendar != "Family" || got[0].Category != "personal" {
+		t.Fatalf("with label: %+v", got)
+	}
+	// The id stays on the source name, so renaming doesn't change it.
+	if !strings.Contains(got[0].ID, "evt@google.com/") {
+		t.Errorf("id = %q, want the event UID", got[0].ID)
+	}
+
+	s.SetLabels(map[string]Label{"mail:ada@example.com": {Category: "work"}})
+	got, _ = s.Events(day(4), day(11))
+	if len(got) != 1 || got[0].Calendar != "ada" || got[0].Category != "work" {
+		t.Fatalf("category only: %+v", got)
+	}
+	s.SetLabels(nil)
+	got, _ = s.Events(day(4), day(11))
+	if len(got) != 1 || got[0].Calendar != "ada" || got[0].Category != "" {
+		t.Fatalf("cleared: %+v", got)
+	}
 }

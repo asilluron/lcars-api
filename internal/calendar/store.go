@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"path"
 	"slices"
@@ -27,8 +28,11 @@ type Event struct {
 	ID       string
 	Title    string
 	Location string
-	// Calendar is the name of the calendar the event belongs to.
+	// Calendar is the name shown for the calendar this event belongs to.
 	Calendar string
+	// Category is the lane set for that calendar ("work", "band", "personal"
+	// or "house"), or "" when none is set.
+	Category string
 	AllDay   bool
 	// Start and End are in the Store's location. End is exclusive: an all-day
 	// event on 1 May ends at midnight starting 2 May.
@@ -38,11 +42,39 @@ type Event struct {
 
 // Store holds the events parsed from a directory of .ics files. It is safe for
 // concurrent use.
+// Label is a display name and lane chosen for one calendar on the admin page.
+// An empty Name keeps the name derived from the file.
+type Label struct {
+	Name     string
+	Category string
+}
+
+// CatalogEntry is one calendar found in the directory, before any admin label
+// is applied.
+type CatalogEntry struct {
+	// ID is the stable key labels are stored under.
+	ID string
+	// Source is the name shown when no label is set.
+	Source string
+	// Title is X-WR-CALNAME, or Source when the file has none.
+	Title string
+	// Path is the file's path under the calendar directory. When several
+	// files share an ID, the paths are joined with ", ".
+	Path string
+}
+
 type Store struct {
 	dir    string
 	loc    *time.Location
 	logger *slog.Logger
 	snap   atomic.Pointer[snapshot]
+	labels atomic.Pointer[labelSet]
+}
+
+// labelSet is the admin labels currently in effect. The map is not mutated
+// after the pointer is stored.
+type labelSet struct {
+	byID map[string]Label
 }
 
 type snapshot struct {
@@ -50,6 +82,8 @@ type snapshot struct {
 	// digest is a hash of the files read, to tell whether a reload changed
 	// anything.
 	digest [sha256.Size]byte
+	// catalog is the calendars found in this load, in path order.
+	catalog []CatalogEntry
 	// mu serializes expansion: rrule.Set sorts its date lists in place on every
 	// query, so two queries can't run on the same set at once.
 	mu     sync.Mutex
@@ -62,7 +96,42 @@ type snapshot struct {
 func NewStore(dir string, loc *time.Location, logger *slog.Logger) *Store {
 	s := &Store{dir: dir, loc: loc, logger: logger}
 	s.snap.Store(&snapshot{})
+	s.labels.Store(&labelSet{byID: map[string]Label{}})
 	return s
+}
+
+// SetLabels replaces the admin labels. It reports whether they differ from
+// the labels already in effect. A nil map clears them.
+func (s *Store) SetLabels(labels map[string]Label) bool {
+	next := make(map[string]Label, len(labels))
+	for id, label := range labels {
+		next[id] = label
+	}
+	old := s.labels.Load()
+	s.labels.Store(&labelSet{byID: next})
+	if old == nil {
+		return len(next) > 0
+	}
+	return !maps.Equal(old.byID, next)
+}
+
+// Label returns the admin label stored for id.
+func (s *Store) Label(id string) (Label, bool) {
+	set := s.labels.Load()
+	if set == nil {
+		return Label{}, false
+	}
+	label, ok := set.byID[id]
+	return label, ok
+}
+
+// Catalog returns the calendars found in the last successful load.
+func (s *Store) Catalog() []CatalogEntry {
+	snap := s.snap.Load()
+	if len(snap.catalog) == 0 {
+		return []CatalogEntry{}
+	}
+	return slices.Clone(snap.catalog)
 }
 
 // Location returns the timezone events are reported in.
@@ -92,6 +161,7 @@ func (s *Store) load() (changed bool, err error) {
 
 	var (
 		all      []*series
+		catalog  []CatalogEntry
 		replaced = map[string][]time.Time{}
 		files    int
 		skipped  int
@@ -115,11 +185,14 @@ func (s *Store) load() (changed bool, err error) {
 			return nil
 		}
 		files++
-		parsed, err := s.loadFile(root, p, digest)
+		parsed, entry, err := s.loadFile(root, p, digest)
 		if err != nil {
 			skipped++
 			s.logger.Warn("calendar: skipping file", "path", p, "err", err)
 			return nil
+		}
+		if len(parsed.series) > 0 {
+			catalog = addCatalog(catalog, entry)
 		}
 		all = append(all, parsed.series...)
 		for uid, ts := range parsed.replaced {
@@ -141,7 +214,10 @@ func (s *Store) load() (changed bool, err error) {
 		}
 	}
 
-	snap := &snapshot{loadedAt: time.Now(), series: all}
+	slices.SortFunc(catalog, func(a, b CatalogEntry) int {
+		return cmp.Or(strings.Compare(a.Path, b.Path), strings.Compare(a.ID, b.ID))
+	})
+	snap := &snapshot{loadedAt: time.Now(), series: all, catalog: catalog}
 	digest.Sum(snap.digest[:0])
 	prev := s.snap.Swap(snap)
 	changed = snap.digest != prev.digest
@@ -151,14 +227,15 @@ func (s *Store) load() (changed bool, err error) {
 	return changed, nil
 }
 
-// loadFile parses one .ics file. Its events belong to the calendar named by
-// X-WR-CALNAME if set, otherwise by the top-level subdirectory the file is in,
-// otherwise by the file name without its extension. The file's path and
-// contents are added to digest.
-func (s *Store) loadFile(root *os.Root, p string, digest io.Writer) (*parsed, error) {
+// loadFile parses one .ics file. The display name is a source read from the
+// file (a Google mailbox, or "Gmail") when there is one, otherwise
+// X-WR-CALNAME, otherwise the top-level subdirectory, otherwise the file name
+// without its extension. An admin label can replace that name later. The
+// file's path and contents are added to digest.
+func (s *Store) loadFile(root *os.Root, p string, digest io.Writer) (*parsed, CatalogEntry, error) {
 	data, err := root.ReadFile(p)
 	if err != nil {
-		return nil, err
+		return nil, CatalogEntry{}, err
 	}
 	fmt.Fprintf(digest, "%s\x00%d\x00", p, len(data))
 	_, _ = digest.Write(data) // hashes don't fail
@@ -167,7 +244,32 @@ func (s *Store) loadFile(root *os.Root, p string, digest io.Writer) (*parsed, er
 	if !nested {
 		name = strings.TrimSuffix(name, path.Ext(name))
 	}
-	return parse(bytes.NewReader(data), name, s.loc)
+	parsed, err := parse(bytes.NewReader(data), name, s.loc)
+	if err != nil {
+		return nil, CatalogEntry{}, err
+	}
+	id, label, title := identity(parsed, name, p)
+	for _, sr := range parsed.series {
+		sr.calendar = label
+		sr.key = id
+	}
+	return parsed, CatalogEntry{ID: id, Source: label, Title: title, Path: p}, nil
+}
+
+// addCatalog records entry, joining its path onto an earlier file that has
+// the same calendar id.
+func addCatalog(catalog []CatalogEntry, entry CatalogEntry) []CatalogEntry {
+	for i := range catalog {
+		if catalog[i].ID != entry.ID {
+			continue
+		}
+		catalog[i].Path += ", " + entry.Path
+		if catalog[i].Title == "" {
+			catalog[i].Title = entry.Title
+		}
+		return catalog
+	}
+	return append(catalog, entry)
 }
 
 // Run reloads the directory every interval until ctx is done. A failed reload
@@ -229,11 +331,24 @@ func (s *Store) occurrence(sr *series, start time.Time) Event {
 	if id == "" {
 		id = sr.calendar + "/" + sr.title
 	}
+	name := sr.calendar
+	var category string
+	if set := s.labels.Load(); set != nil {
+		if label, ok := set.byID[sr.key]; ok {
+			if label.Name != "" {
+				name = label.Name
+			}
+			if KnownCategory(label.Category) {
+				category = label.Category
+			}
+		}
+	}
 	return Event{
 		ID:       id + "/" + start.UTC().Format("20060102T150405Z"),
 		Title:    sr.title,
 		Location: sr.location,
-		Calendar: sr.calendar,
+		Calendar: name,
+		Category: category,
 		AllDay:   sr.allDay,
 		Start:    start.In(s.loc),
 		End:      sr.end(start).In(s.loc),

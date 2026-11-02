@@ -14,12 +14,14 @@ import (
 	"os/signal"
 	"slices"
 	"syscall"
+	"time"
 
 	"github.com/asilluron/lcars-api/internal/broker"
 	"github.com/asilluron/lcars-api/internal/calendar"
 	"github.com/asilluron/lcars-api/internal/cameras"
 	"github.com/asilluron/lcars-api/internal/config"
 	"github.com/asilluron/lcars-api/internal/devices"
+	"github.com/asilluron/lcars-api/internal/locks"
 	"github.com/asilluron/lcars-api/internal/natsapi"
 	"github.com/asilluron/lcars-api/internal/reminders"
 	"github.com/asilluron/lcars-api/internal/server"
@@ -74,24 +76,32 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		logger.Info("training disabled: training.dir is not set")
 	}
 
-	// Device tokens and reminders, when Supabase is configured. bus is set
-	// below; tokens can only be removed once the servers are running.
+	// Device tokens, reminders, and calendar labels, when Supabase is
+	// configured. bus is set below; tokens can only be removed once the
+	// servers are running.
 	var (
 		bus          *broker.Broker
 		tokens       *devices.Store
 		reminderList *reminders.Store
 		admins       server.AdminAuth
+		labels       server.CalendarLabelDB
 		auth         *broker.Auth
 	)
 	if cfg.Supabase.Enabled() {
 		db := supabase.New(cfg.Supabase.URL, cfg.Supabase.SecretKey)
 		admins = db
+		labels = db
 		reminderList = reminders.New(reminders.Supabase(db))
 		logger.Info("reminders enabled")
 		tokens = devices.NewStore(db, logger, func(id string) { bus.Disconnect(id) })
 		if err := tokens.Load(ctx); err != nil {
 			// Keep going: Run retries, and until then devices are refused.
 			logger.Error("device tokens unavailable; devices are refused until they load", "err", err)
+		}
+		if cal != nil {
+			if _, err := server.ReloadCalendarLabels(ctx, db, cal); err != nil {
+				logger.Error("calendar labels unavailable", "err", err)
+			}
 		}
 		auth = &broker.Auth{
 			Check:     tokens.Check,
@@ -129,6 +139,18 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		logger.Info("cameras disabled: eufy.url is not set")
 	}
 
+	var doorLocks *locks.Client
+	if cfg.Seam.Enabled() {
+		base := cfg.Seam.URL
+		if base == "" {
+			base = locks.DefaultURL
+		}
+		doorLocks = locks.New(base, cfg.Seam.APIKey)
+		logger.Info("locks enabled")
+	} else {
+		logger.Info("locks disabled: seam.api_key is not set")
+	}
+
 	var forecast *weather.Client
 	if cfg.Weather.Enabled() {
 		forecast = weather.New(cfg.Weather.URL, *cfg.Weather.Latitude, *cfg.Weather.Longitude)
@@ -144,6 +166,7 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 	svc, err := natsapi.Start(ctx, bus.Conn, logger, server.Version(), natsapi.Deps{
 		Calendar:  cal,
 		Cameras:   cams,
+		Locks:     doorLocks,
 		Reminders: reminderList,
 		Training:  audio,
 		Weather:   forecast,
@@ -158,17 +181,24 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 	if tokens != nil {
 		go tokens.Run(ctx, cfg.Supabase.RefreshInterval)
 	}
+	if labels != nil && cal != nil {
+		go refreshCalendarLabels(ctx, cfg.Supabase.RefreshInterval, labels, cal,
+			natsapi.CalendarChanged(bus.Conn, logger), logger)
+	}
 
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: server.New(logger, server.Deps{
-			Calendar:  cal,
-			Cameras:   cams,
-			Reminders: reminderList,
-			Weather:   forecast,
-			NATS:      bus.Conn,
-			Devices:   tokens,
-			Admins:    admins,
+			Calendar:        cal,
+			Cameras:         cams,
+			Locks:           doorLocks,
+			Reminders:       reminderList,
+			Weather:         forecast,
+			NATS:            bus.Conn,
+			Devices:         tokens,
+			Admins:          admins,
+			Labels:          labels,
+			CalendarChanged: natsapi.CalendarChanged(bus.Conn, logger),
 		}),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		ReadTimeout:       cfg.ReadTimeout,
@@ -201,6 +231,32 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) (err
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	return nil // the deferred functions stop the NATS service and broker
+}
+
+// refreshCalendarLabels re-reads labels until ctx is done, and publishes a
+// calendar update when they change, so a display picks up a name edited
+// directly in the database.
+func refreshCalendarLabels(ctx context.Context, every time.Duration, db server.CalendarLabelDB, store *calendar.Store, notify func(time.Time), logger *slog.Logger) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			changed, err := server.ReloadCalendarLabels(ctx, db, store)
+			if err != nil {
+				logger.ErrorContext(ctx, "calendar labels unavailable", "err", err)
+				continue
+			}
+			if changed {
+				logger.InfoContext(ctx, "calendar labels loaded")
+				if notify != nil {
+					notify(time.Now())
+				}
+			}
+		}
+	}
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {

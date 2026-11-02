@@ -56,6 +56,7 @@ func newCalendarResponse(a calendar.Agenda) *lcarsv1.GetCalendarResponse {
 				Id:        ev.ID,
 				Title:     ev.Title,
 				Calendar:  ev.Calendar,
+				Category:  ev.Category,
 				Location:  ev.Location,
 				AllDay:    ev.AllDay,
 				StartUnix: ev.Start.Unix(),

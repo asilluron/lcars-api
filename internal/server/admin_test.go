@@ -187,6 +187,8 @@ func TestAdminTokens(t *testing.T) {
 			{http.MethodGet, "/admin/api/tokens"},
 			{http.MethodPost, "/admin/api/tokens"},
 			{http.MethodDelete, "/admin/api/tokens/dev_000000000000"},
+			{http.MethodGet, "/admin/api/calendars"},
+			{http.MethodPut, "/admin/api/calendars"},
 		} {
 			resp := call(t, srv, op[0], op[1], bearer, `{"name":"x"}`, nil)
 			if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("WWW-Authenticate") == "" {
@@ -255,6 +257,8 @@ func TestAdminDisabled(t *testing.T) {
 		{http.MethodGet, "/admin/api/tokens"},
 		{http.MethodPost, "/admin/api/tokens"},
 		{http.MethodDelete, "/admin/api/tokens/dev_000000000000"},
+		{http.MethodGet, "/admin/api/calendars"},
+		{http.MethodPut, "/admin/api/calendars"},
 	} {
 		if resp := call(t, srv, op[0], op[1], testToken, `{}`, nil); resp.StatusCode != http.StatusServiceUnavailable {
 			t.Errorf("%s %s = %d, want 503", op[0], op[1], resp.StatusCode)

@@ -4,12 +4,15 @@ import {
   ApiError,
   createReminder,
   createToken,
+  listCalendars,
   deleteReminder,
   listReminders,
   listTokens,
   revokeToken,
+  saveCalendar,
   signIn,
   type Accent,
+  type CalendarSource,
   type DeviceToken,
   type NewDeviceToken,
   type Reminder,
@@ -248,7 +251,146 @@ function TokensPage({ session, onExpired }: { session: Session; onExpired: () =>
           <TokenTable tokens={tokens} onRevoke={onRevoke} />
         )}
       </section>
+      <Calendars session={session} onExpired={onExpired} />
     </>
+  );
+}
+
+const CATEGORIES = [
+  { value: "", label: "From the name" },
+  { value: "work", label: "Work" },
+  { value: "band", label: "Band" },
+  { value: "personal", label: "Personal" },
+  { value: "house", label: "House" },
+];
+
+function Calendars({ session, onExpired }: { session: Session; onExpired: () => void }) {
+  const [rows, setRows] = useState<CalendarSource[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const run = useCallback(
+    async <T,>(call: () => Promise<T>): Promise<T | undefined> => {
+      setError(null);
+      try {
+        return await call();
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) onExpired();
+        else setError(err instanceof Error ? err.message : String(err));
+        return undefined;
+      }
+    },
+    [onExpired],
+  );
+
+  const refresh = useCallback(async () => {
+    const list = await run(() => listCalendars(session.access_token));
+    if (list) setRows(list);
+  }, [run, session.access_token]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const edit = (id: string, patch: Partial<Pick<CalendarSource, "name" | "category">>) => {
+    setStatus(null);
+    setRows((current) => current?.map((row) => (row.id === id ? { ...row, ...patch } : row)) ?? null);
+  };
+
+  const onSave = async (row: CalendarSource) => {
+    setBusyId(row.id);
+    const saved = await run(() =>
+      saveCalendar(session.access_token, { id: row.id, name: row.name.trim(), category: row.category }),
+    );
+    setBusyId(null);
+    if (!saved) return;
+    setRows((current) => current?.map((item) => (item.id === saved.id ? saved : item)) ?? null);
+    setStatus(`Saved ${saved.path}`);
+  };
+
+  return (
+    <section className="panel" aria-labelledby="calendars-heading">
+      <h2 id="calendars-heading">Calendars</h2>
+      <p className="muted">
+        The tag on each event is the display name, or the source when that is blank: a mailbox such as ada, or Gmail.
+        The panel shows the first 8 characters. Category sets the color and the filter.
+      </p>
+      {error && (
+        <p className="message error" role="alert">
+          {error}
+        </p>
+      )}
+      {status && (
+        <p className="message" role="status" data-testid="calendar-saved">
+          {status}
+        </p>
+      )}
+      {rows === null ? (
+        <p className="muted">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="muted">No calendars found. Point calendar.dir at a directory of .ics files.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Calendar</th>
+                <th scope="col">Display name</th>
+                <th scope="col">Category</th>
+                <th scope="col">
+                  <span className="visually-hidden">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} data-testid={`calendar-${row.id}`}>
+                  <td className="name">
+                    {row.title}
+                    <div className="muted">{row.path}</div>
+                    <div className="muted">Source {row.source}</div>
+                  </td>
+                  <td data-label="Display name">
+                    <input
+                      aria-label={`Display name for ${row.path}`}
+                      maxLength={40}
+                      placeholder={row.source}
+                      value={row.name}
+                      onChange={(e) => edit(row.id, { name: e.target.value })}
+                    />
+                  </td>
+                  <td data-label="Category">
+                    <select
+                      aria-label={`Category for ${row.path}`}
+                      value={row.category}
+                      onChange={(e) => edit(row.id, { category: e.target.value })}
+                    >
+                      {CATEGORIES.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="actions">
+                    <button
+                      type="button"
+                      className="pill pill-small"
+                      disabled={busyId === row.id}
+                      aria-label={`Save ${row.path}`}
+                      onClick={() => void onSave(row)}
+                    >
+                      {busyId === row.id ? "Saving…" : "Save"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 

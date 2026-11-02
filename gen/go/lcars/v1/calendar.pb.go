@@ -257,7 +257,10 @@ type CalendarEvent struct {
 	// occurrence of a recurring event has its own ID.
 	Id    string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	// Name of the calendar the event belongs to.
+	// Name shown for this calendar. An admin-set name if one is set, otherwise
+	// a short source from the file (a mailbox name such as "ada", or "Gmail"),
+	// otherwise the file's X-WR-CALNAME, its top-level subdirectory, or its
+	// file name.
 	Calendar string `protobuf:"bytes,3,opt,name=calendar,proto3" json:"calendar,omitempty"`
 	// Empty if the event has no location.
 	Location string `protobuf:"bytes,4,opt,name=location,proto3" json:"location,omitempty"`
@@ -272,7 +275,11 @@ type CalendarEvent struct {
 	StartTime *string `protobuf:"bytes,8,opt,name=start_time,json=startTime,proto3,oneof" json:"start_time,omitempty"`
 	// End time as "HH:MM" if this timed event ends on this day ("24:00" if it
 	// ends at midnight); unset for all-day events and on days before the last.
-	EndTime       *string `protobuf:"bytes,9,opt,name=end_time,json=endTime,proto3,oneof" json:"end_time,omitempty"`
+	EndTime *string `protobuf:"bytes,9,opt,name=end_time,json=endTime,proto3,oneof" json:"end_time,omitempty"`
+	// Lane set for this calendar on the admin page: "work", "band", "personal"
+	// or "house". Empty when none is set; a display then chooses a lane from
+	// the calendar name.
+	Category      string `protobuf:"bytes,10,opt,name=category,proto3" json:"category,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -370,6 +377,13 @@ func (x *CalendarEvent) GetEndTime() string {
 	return ""
 }
 
+func (x *CalendarEvent) GetCategory() string {
+	if x != nil {
+		return x.Category
+	}
+	return ""
+}
+
 // CalendarUpdated is published on the subject "lcars.calendar.updated" when
 // the server re-reads the .ics files and they have changed. Clients showing
 // the calendar should then request it again.
@@ -436,7 +450,7 @@ const file_lcars_v1_calendar_proto_rawDesc = "" +
 	"\x04date\x18\x01 \x01(\tR\x04date\x12\x18\n" +
 	"\aweekday\x18\x02 \x01(\tR\aweekday\x12\x14\n" +
 	"\x05today\x18\x03 \x01(\bR\x05today\x12/\n" +
-	"\x06events\x18\x04 \x03(\v2\x17.lcars.v1.CalendarEventR\x06events\"\xa0\x02\n" +
+	"\x06events\x18\x04 \x03(\v2\x17.lcars.v1.CalendarEventR\x06events\"\xbc\x02\n" +
 	"\rCalendarEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1a\n" +
@@ -448,7 +462,9 @@ const file_lcars_v1_calendar_proto_rawDesc = "" +
 	"\bend_unix\x18\a \x01(\x03R\aendUnix\x12\"\n" +
 	"\n" +
 	"start_time\x18\b \x01(\tH\x00R\tstartTime\x88\x01\x01\x12\x1e\n" +
-	"\bend_time\x18\t \x01(\tH\x01R\aendTime\x88\x01\x01B\r\n" +
+	"\bend_time\x18\t \x01(\tH\x01R\aendTime\x88\x01\x01\x12\x1a\n" +
+	"\bcategory\x18\n" +
+	" \x01(\tR\bcategoryB\r\n" +
 	"\v_start_timeB\v\n" +
 	"\t_end_time\"9\n" +
 	"\x0fCalendarUpdated\x12&\n" +

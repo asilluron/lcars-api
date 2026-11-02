@@ -41,6 +41,8 @@ func TestAdminUI(t *testing.T) {
 
 	buildImage(t)
 	email, password := createAdmin(t)
+	clearFixtureCalendarLabel(t)
+	t.Cleanup(func() { clearFixtureCalendarLabel(t) })
 
 	alias := "lcars-ui-" + strconv.Itoa(os.Getpid())
 	config := writeConfigFile(t, "timezone = \"America/New_York\"\n\n[calendar]\ndir = \"/calendars\"\n\n"+

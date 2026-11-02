@@ -65,7 +65,10 @@ pub struct CalendarEvent {
     pub id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub title: ::prost::alloc::string::String,
-    /// Name of the calendar the event belongs to.
+    /// Name shown for this calendar. An admin-set name if one is set, otherwise
+    /// a short source from the file (a mailbox name such as "ada", or "Gmail"),
+    /// otherwise the file's X-WR-CALNAME, its top-level subdirectory, or its
+    /// file name.
     #[prost(string, tag="3")]
     pub calendar: ::prost::alloc::string::String,
     /// Empty if the event has no location.
@@ -88,6 +91,11 @@ pub struct CalendarEvent {
     /// ends at midnight); unset for all-day events and on days before the last.
     #[prost(string, optional, tag="9")]
     pub end_time: ::core::option::Option<::prost::alloc::string::String>,
+    /// Lane set for this calendar on the admin page: "work", "band", "personal"
+    /// or "house". Empty when none is set; a display then chooses a lane from
+    /// the calendar name.
+    #[prost(string, tag="10")]
+    pub category: ::prost::alloc::string::String,
 }
 /// CalendarUpdated is published on the subject "lcars.calendar.updated" when
 /// the server re-reads the .ics files and they have changed. Clients showing
@@ -141,6 +149,97 @@ pub struct Camera {
     /// A missing snapshot is 404 and does not wake the camera.
     #[prost(string, tag="5")]
     pub snapshot_path: ::prost::alloc::string::String,
+}
+/// ListLocksRequest asks for the smart locks the server can control through
+/// Seam. Send it as a request on the subject "lcars.locks.list"; the reply is
+/// a ListLocksResponse. An empty message (or an empty body) is the whole
+/// request.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid request, 503 if locks are
+/// not configured or Seam is unreachable, 500 otherwise) and
+/// "Nats-Service-Error" (a message).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListLocksRequest {
+}
+/// ListLocksResponse is the locks Seam currently reports. The order is Seam's
+/// order.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListLocksResponse {
+    #[prost(message, repeated, tag="1")]
+    pub locks: ::prost::alloc::vec::Vec<Lock>,
+}
+/// Lock is one smart lock from Seam.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Lock {
+    /// Seam device id (a UUID). Use this with lcars.locks.lock and
+    /// lcars.locks.unlock.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    /// Display name from Seam, which may be empty.
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    /// True when the lock reports it is locked. False when unlocked, or when
+    /// the lock is offline and Seam has no current state.
+    #[prost(bool, tag="3")]
+    pub locked: bool,
+    /// True when Seam reports the lock is online.
+    #[prost(bool, tag="4")]
+    pub online: bool,
+    /// True when this lock can be locked remotely.
+    #[prost(bool, tag="5")]
+    pub can_lock: bool,
+    /// True when this lock can be unlocked remotely.
+    #[prost(bool, tag="6")]
+    pub can_unlock: bool,
+}
+/// LockDoorRequest asks the server to lock a door. Send it as a request on
+/// the subject "lcars.locks.lock"; the reply is a LockDoorResponse. The
+/// server waits for Seam to confirm the action (or fail) before replying.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid id, 404 if Seam has no such
+/// lock, 503 if locks are not configured or Seam is unreachable, 504 if
+/// Seam did not finish in time, 500 otherwise) and "Nats-Service-Error".
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LockDoorRequest {
+    /// Seam device id from ListLocksResponse.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+}
+/// LockDoorResponse confirms the lock command finished.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct LockDoorResponse {
+    /// Seam device id that was locked.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    /// Always true after a successful lock.
+    #[prost(bool, tag="2")]
+    pub locked: bool,
+}
+/// UnlockDoorRequest asks the server to unlock a door. Send it as a request
+/// on the subject "lcars.locks.unlock"; the reply is an UnlockDoorResponse.
+/// The server waits for Seam to confirm the action (or fail) before replying.
+///
+/// On failure the reply has an empty body and the headers
+/// "Nats-Service-Error-Code" (400 for an invalid id, 404 if Seam has no such
+/// lock, 503 if locks are not configured or Seam is unreachable, 504 if
+/// Seam did not finish in time, 500 otherwise) and "Nats-Service-Error".
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UnlockDoorRequest {
+    /// Seam device id from ListLocksResponse.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+}
+/// UnlockDoorResponse confirms the unlock command finished.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UnlockDoorResponse {
+    /// Seam device id that was unlocked.
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    /// Always false after a successful unlock.
+    #[prost(bool, tag="2")]
+    pub locked: bool,
 }
 /// ListRemindersRequest asks for every reminder. Send it as a request on the
 /// subject "lcars.reminders.list"; the reply is a ListRemindersResponse. An
