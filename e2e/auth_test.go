@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -79,6 +80,8 @@ func (s supabaseInfo) env() []string {
 
 // call sends a request straight to Supabase with the secret key, bypassing
 // lcars-api (so it isn't counted as API coverage), and returns the body.
+// It uses a background context so cleanups can still delete rows after the
+// test's context is canceled.
 func (s supabaseInfo) call(t *testing.T, method, path string, body any) []byte {
 	t.Helper()
 	var r io.Reader
@@ -89,7 +92,9 @@ func (s supabaseInfo) call(t *testing.T, method, path string, body any) []byte {
 		}
 		r = bytes.NewReader(data)
 	}
-	req, err := http.NewRequestWithContext(t.Context(), method, s.APIURL+path, r)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, s.APIURL+path, r)
 	if err != nil {
 		t.Fatal(err)
 	}
